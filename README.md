@@ -1,10 +1,10 @@
-# Lab Breakout: Roguelite 🧪⚡
+# Lab Breakout: Roguelite 
 
 **Lab Breakout: Roguelite** is a fast-paced 2D top-down action roguelite developed in **Unity 6 (Universal Render Pipeline 2D)**. Fight your way through experimental laboratory sectors, battle waves of mutated bio-monsters and mechanical abominations, synthesize weapon evolutions, and escape the containment facility!
 
 ---
 
-## 🎮 Key Features
+##  Key Features
 
 - **Dynamic Combat & Weapon Evolution System**:
   - Arsenal of unique primary weapons: *Bio Needler, Nano Blade, Plasma Blaster, Tesla Orb, Gravity Grenadier, Flame Ring, Toxic Spore*, and more.
@@ -22,7 +22,7 @@
 
 ---
 
-## 🛠️ Tech Stack & Requirements
+##  Tech Stack & Requirements
 
 | Specification | Detail |
 | --- | --- |
@@ -34,7 +34,7 @@
 
 ---
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 - [Unity Hub](https://unity.com/download)
@@ -55,7 +55,7 @@
 
 ---
 
-## 🕹️ Controls
+##  Controls
 
 | Action | Key / Input |
 | --- | --- |
@@ -67,7 +67,7 @@
 
 ---
 
-## 📂 Project Architecture
+##  Project Architecture
 
 ```
 Assets/
@@ -93,5 +93,5 @@ Assets/
 
 ---
 
-## 📄 License
+##  License
 This project is for educational and portfolio demonstration purposes. All rights reserved by the author.

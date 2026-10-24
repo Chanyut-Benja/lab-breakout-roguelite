@@ -24,6 +24,8 @@ public class BoonData
     public BoonType boonType;
     public BoonItemType boonItemType;
     public bool isSlotBoon = true;
+    public bool isResonant = false;
+    public ResonantBoonType resonantForm = ResonantBoonType.None;
     public float value;
     public Sprite icon;
 

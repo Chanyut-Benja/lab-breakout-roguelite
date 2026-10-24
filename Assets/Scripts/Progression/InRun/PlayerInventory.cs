@@ -992,12 +992,74 @@ public class PlayerInventory : MonoBehaviour
 
             if (heldWeapon != null && heldWeapon.isEvolved)
             {
-                boon.isResonant = true;
-                boon.resonantForm = GetResonantBoonType(boon.boonType);
+                // ตรวจสอบความสอดคล้องตาม Resonance Matrix ทั้ง 5 สาย
+                bool isMatchingMatrix = false;
+                ResonantBoonType matchedForm = ResonantBoonType.None;
 
-                Debug.Log($"[PlayerInventory] ★★ BOON RESONANCE! {GetEvolvedWeaponName(heldWeapon.evolvedForm)} + {GetBoonName(boon.boonType)} (Lv.2) -> {GetResonantBoonName(boon.resonantForm)}!");
-                OnBoonResonated?.Invoke(boon);
-                OnBoonResonatedStatic?.Invoke(boon);
+                switch (boon.boonType)
+                {
+                    case BoonItemType.NanoBarrier: // สาย 1
+                        if (heldWeapon.evolvedForm == EvolvedWeaponType.ExecutionerMatrix || heldWeapon.weaponType == WeaponType.NanoBlade)
+                        {
+                            isMatchingMatrix = true;
+                            matchedForm = ResonantBoonType.BladeShieldMatrix;
+                        }
+                        break;
+                    case BoonItemType.ToxicSpore: // สาย 2
+                        if (heldWeapon.evolvedForm == EvolvedWeaponType.PlagueSporeSpreader || heldWeapon.weaponType == WeaponType.BioNeedler)
+                        {
+                            isMatchingMatrix = true;
+                            matchedForm = ResonantBoonType.EpidemicOutbreak;
+                        }
+                        break;
+                    case BoonItemType.FlameRing: // สาย 3
+                        if (heldWeapon.evolvedForm == EvolvedWeaponType.SupernovaCannon || heldWeapon.weaponType == WeaponType.PlasmaBlaster)
+                        {
+                            isMatchingMatrix = true;
+                            matchedForm = ResonantBoonType.SolarCoreRing;
+                        }
+                        break;
+                    case BoonItemType.StaticAura: // สาย 4
+                        if (heldWeapon.evolvedForm == EvolvedWeaponType.StormCitadel || heldWeapon.weaponType == WeaponType.TeslaOrb)
+                        {
+                            isMatchingMatrix = true;
+                            matchedForm = ResonantBoonType.ThunderstormDomain;
+                        }
+                        break;
+                    case BoonItemType.MagneticPulse: // สาย 5
+                        if (heldWeapon.evolvedForm == EvolvedWeaponType.SingularityCannon || heldWeapon.weaponType == WeaponType.GravityGrenadier)
+                        {
+                            isMatchingMatrix = true;
+                            matchedForm = ResonantBoonType.EventHorizonVoid;
+                        }
+                        break;
+                }
+
+                if (isMatchingMatrix)
+                {
+                    boon.isResonant = true;
+                    boon.resonantForm = matchedForm;
+
+                    if (BoonManager.Instance != null)
+                    {
+                        BoonManager.Instance.SetBoonResonant(boon.boonType, true);
+                    }
+
+                    Debug.Log($"[PlayerInventory] ★★ BOON RESONANCE! {GetEvolvedWeaponName(heldWeapon.evolvedForm)} + {GetBoonName(boon.boonType)} (Lv.2) -> {GetResonantBoonName(boon.resonantForm)}!");
+                    
+                    OnBoonResonated?.Invoke(boon);
+                    OnBoonResonatedStatic?.Invoke(boon);
+
+                    if (InGameHUDController.Instance != null)
+                    {
+                        InGameHUDController.Instance.HighlightBoonResonance(boon.boonType);
+                    }
+
+                    if (AudioManager.Instance != null)
+                    {
+                        AudioManager.Instance.PlayResonanceSFX();
+                    }
+                }
             }
         }
     }

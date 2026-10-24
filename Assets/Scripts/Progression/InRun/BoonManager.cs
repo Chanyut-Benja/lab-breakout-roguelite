@@ -17,6 +17,27 @@ public class BoonManager : MonoBehaviour
     [Header("Boon Database (5 New Boons)")]
     [SerializeField] private List<BoonData> boonPool = new List<BoonData>();
 
+    private readonly Dictionary<BoonItemType, bool> boonResonantStates = new Dictionary<BoonItemType, bool>();
+
+    public bool IsBoonResonant(BoonItemType type)
+    {
+        return boonResonantStates.TryGetValue(type, out bool res) && res;
+    }
+
+    public void SetBoonResonant(BoonItemType type, bool resonant)
+    {
+        boonResonantStates[type] = resonant;
+        for (int i = 0; i < boonPool.Count; i++)
+        {
+            if (boonPool[i].boonItemType == type)
+            {
+                boonPool[i].isResonant = resonant;
+                boonPool[i].resonantForm = PlayerInventory.GetResonantBoonType(type);
+                break;
+            }
+        }
+    }
+
     [Header("UI Card References")]
     [SerializeField] private GameObject boonPanel;
     [SerializeField] private Text[] cardTitleTexts; // 3 Cards
@@ -50,6 +71,8 @@ public class BoonManager : MonoBehaviour
 
     private void HookInventoryEvents()
     {
+        PlayerInventory.OnWeaponEvolvedStatic -= HandleWeaponEvolvedForResonance;
+        PlayerInventory.OnWeaponEvolvedStatic += HandleWeaponEvolvedForResonance;
         PlayerInventory.OnBoonAddedStatic -= HandleBoonAdded;
         PlayerInventory.OnBoonAddedStatic += HandleBoonAdded;
         PlayerInventory.OnBoonUpgradedStatic -= HandleBoonUpgraded;
@@ -60,9 +83,15 @@ public class BoonManager : MonoBehaviour
 
     private void UnhookInventoryEvents()
     {
+        PlayerInventory.OnWeaponEvolvedStatic -= HandleWeaponEvolvedForResonance;
         PlayerInventory.OnBoonAddedStatic -= HandleBoonAdded;
         PlayerInventory.OnBoonUpgradedStatic -= HandleBoonUpgraded;
         PlayerInventory.OnBoonResonatedStatic -= HandleBoonResonated;
+    }
+
+    private void HandleWeaponEvolvedForResonance(WeaponSlotEntry entry)
+    {
+        CheckResonanceMatrix();
     }
 
     private void HandleBoonAdded(BoonSlotEntry entry)
@@ -75,12 +104,32 @@ public class BoonManager : MonoBehaviour
     {
         OnBoonUpgraded?.Invoke(entry);
         OnBoonUpgradedStatic?.Invoke(entry);
+
+        if (entry != null && entry.level >= PlayerInventory.MaxBoonLevel)
+        {
+            CheckResonanceMatrix();
+        }
     }
 
     private void HandleBoonResonated(BoonSlotEntry entry)
     {
+        if (entry != null)
+        {
+            SetBoonResonant(entry.boonType, true);
+        }
         OnBoonResonated?.Invoke(entry);
         OnBoonResonatedStatic?.Invoke(entry);
+    }
+
+    /// <summary>
+    /// ตรวจสอบ Resonance Matrix ทั้ง 5 สายผ่าน Event-Driven Logic
+    /// </summary>
+    public void CheckResonanceMatrix()
+    {
+        PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        if (inv == null) return;
+
+        inv.CheckResonancesOnly();
     }
 
     /// <summary>

@@ -49,6 +49,12 @@ public class EnemySpawner : MonoBehaviour
             return;
         }
         CacheArenaBounds();
+
+        // Ensure RoomWaveSpawner (Balance Sheet Section 8) is available in scene
+        if (Enemies.RoomWaveSpawner.Instance == null && GetComponent<Enemies.RoomWaveSpawner>() == null)
+        {
+            gameObject.AddComponent<Enemies.RoomWaveSpawner>();
+        }
     }
 
     private void Start()
@@ -94,12 +100,22 @@ public class EnemySpawner : MonoBehaviour
         roomElapsedTime = 0f;
         StopAllCoroutines();
         StartCoroutine(SpawnRoutine());
+
+        if (Enemies.RoomWaveSpawner.Instance != null && !Enemies.RoomWaveSpawner.Instance.IsSpawning)
+        {
+            Enemies.RoomWaveSpawner.Instance.StartSpawning();
+        }
     }
 
     public void StopSpawning()
     {
         isSpawning = false;
         StopAllCoroutines();
+
+        if (Enemies.RoomWaveSpawner.Instance != null && Enemies.RoomWaveSpawner.Instance.IsSpawning)
+        {
+            Enemies.RoomWaveSpawner.Instance.StopSpawning();
+        }
     }
 
     public void DebugSetElapsedTime(float elapsedSeconds)
@@ -184,6 +200,14 @@ public class EnemySpawner : MonoBehaviour
             spawnInterval = 1f / currentRate;
 
             int currentCap = GetCurrentEnemyCap();
+
+            // Phase 4 (85s - 90s): หยุด Spawn เคลียร์สนาม
+            if (roomElapsedTime >= 85f && roomElapsedTime <= 90f)
+            {
+                yield return new WaitForSeconds(0.25f);
+                continue;
+            }
+
             // ตรวจสอบ Enemy Cap ก่อน Spawn หากแตะหรือเกิน Cap ให้ข้ามรอบนั้นทันทีโดยไม่เก็บคิวไว้เติมทีหลัง
             if (activeEnemies.Count < currentCap && enemyPrefabs != null && enemyPrefabs.Length > 0)
             {
@@ -309,23 +333,7 @@ public class EnemySpawner : MonoBehaviour
         if (enemyObj == null) return;
 
         int currentRoom = RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 1;
-
-        float hpMultiplier = 1f + 0.25f * (currentRoom - 1);
-        float damageMultiplier = 1f + 0.08f * (currentRoom - 1);
-        float speedMultiplier = 1f + Mathf.Min(0.02f * (currentRoom - 1), 0.20f);
-
-        EnemyBase enemyBase = enemyObj.GetComponent<EnemyBase>();
-        if (enemyBase != null)
-        {
-            enemyBase.Init(player, hpMultiplier, damageMultiplier, speedMultiplier);
-            return;
-        }
-
-        EnemyAI enemyAI = enemyObj.GetComponent<EnemyAI>();
-        if (enemyAI != null)
-        {
-            enemyAI.SetScaledStats(hpMultiplier, damageMultiplier, speedMultiplier);
-        }
+        Enemies.Core.EnemyScaling.ApplyScaling(enemyObj, currentRoom, player);
     }
 
     public void ClearAllEnemies()
@@ -348,5 +356,6 @@ public class EnemySpawner : MonoBehaviour
             }
         }
         activeEnemies.Clear();
+        Combat.CreditPickup.VacuumAllActiveCredits();
     }
 }

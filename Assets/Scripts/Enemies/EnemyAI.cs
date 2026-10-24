@@ -404,14 +404,40 @@ public class EnemyAI : MonoBehaviour, IDamageable
             Instantiate(deathVFX, transform.position, Quaternion.identity);
         }
 
-        if (expPrefab != null)
+        // 1. Spawn EXP Gem (according to expAmount) always
+        GameObject expToSpawn = expPrefab;
+        GameObject expInstance = null;
+        if (expToSpawn != null)
         {
-            GameObject expObj = Instantiate(expPrefab, transform.position, Quaternion.identity);
-            EXPCrystal crystal = expObj.GetComponent<EXPCrystal>();
+            expInstance = Instantiate(expToSpawn, transform.position, Quaternion.identity);
+        }
+        else
+        {
+            expInstance = new GameObject("EXP_Crystal");
+            expInstance.transform.position = transform.position;
+            SpriteRenderer sr = expInstance.AddComponent<SpriteRenderer>();
+            sr.sprite = ProceduralSprites.Crystal;
+            sr.sortingOrder = -5;
+            CircleCollider2D cc = expInstance.AddComponent<CircleCollider2D>();
+            cc.isTrigger = true;
+            cc.radius = 0.25f;
+            EXPCrystal crystal = expInstance.AddComponent<EXPCrystal>();
+            crystal.SetExpValue(expAmount);
+        }
+
+        if (expInstance != null)
+        {
+            EXPCrystal crystal = expInstance.GetComponent<EXPCrystal>();
             if (crystal != null)
             {
                 crystal.SetExpValue(expAmount);
             }
+        }
+
+        // 2. Spawn Credit (according to DropRate) always (35% default)
+        if (UnityEngine.Random.value <= 0.35f)
+        {
+            CreditPickup.CreatePickup(transform.position, 1);
         }
 
         if (isBoss && RoomManager.Instance != null)

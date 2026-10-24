@@ -59,6 +59,10 @@ namespace Enemies.Core
         [Header("EXP & Rewards")]
         [SerializeField] private int expDrop = 5;
         [SerializeField] private GameObject expPrefab;
+        [Range(0f, 1f)]
+        [SerializeField] private float creditDropRate = 0.35f;
+        [SerializeField] private int creditDropAmount = 1;
+        [SerializeField] private GameObject creditPrefab;
 
         [Header("Visual Effects (VFX)")]
         [SerializeField] private GameObject spawnVFX;
@@ -113,6 +117,9 @@ namespace Enemies.Core
 
         public int ExpDrop => expDrop;
         public GameObject ExpPrefab => expPrefab;
+        public float CreditDropRate => creditDropRate;
+        public int CreditDropAmount => creditDropAmount;
+        public GameObject CreditPrefab => creditPrefab;
 
         public GameObject SpawnVFX => spawnVFX;
         public GameObject DeathVFX => deathVFX;

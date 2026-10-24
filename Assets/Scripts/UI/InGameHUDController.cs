@@ -335,7 +335,14 @@ public class InGameHUDController : MonoBehaviour
 
     private void HandleBoonAdded(BoonSlotEntry entry) => RefreshBoonSlots();
     private void HandleBoonUpgraded(BoonSlotEntry entry) => RefreshBoonSlots();
-    private void HandleBoonResonated(BoonSlotEntry entry) => RefreshBoonSlots();
+    private void HandleBoonResonated(BoonSlotEntry entry)
+    {
+        RefreshBoonSlots();
+        if (entry != null)
+        {
+            HighlightBoonResonance(entry.boonType);
+        }
+    }
 
     private void HandleCreditsChanged(int currentCredits) => UpdateCreditsDisplay(currentCredits);
     private void HandleEvolutionCoreCountChanged(int currentCores) => UpdateEvolutionCoresDisplay(currentCores);
@@ -431,6 +438,29 @@ public class InGameHUDController : MonoBehaviour
             else
             {
                 slot.SetEmpty();
+            }
+        }
+    }
+
+    public void HighlightBoonResonance(BoonItemType boonType)
+    {
+        PlayerInventory inv = playerInventory ?? PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        for (int i = 0; i < boonSlots.Count; i++)
+        {
+            HUDSlotUI slot = boonSlots[i];
+            if (slot == null) continue;
+
+            if (inv != null && i < inv.Boons.Count)
+            {
+                BoonSlotEntry entry = inv.Boons[i];
+                if (entry.boonType == boonType)
+                {
+                    string nameShort = GetBoonShortName(entry.boonType);
+                    Sprite boonIcon = PlayerInventory.GetBoonIcon(entry.boonType);
+                    slot.SetBoon(boonIcon, entry.level, true, nameShort);
+                    slot.SetResonanceActive(true, new Color(0.85f, 0.45f, 1.0f, 1f));
+                    break;
+                }
             }
         }
     }

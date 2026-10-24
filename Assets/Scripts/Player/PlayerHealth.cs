@@ -31,6 +31,7 @@ public class PlayerHealth : MonoBehaviour, IDamageable
     public bool IsInvulnerable => isDashInvulnerable || Time.time < invulnerableUntil;
 
     public event System.Action OnBarrierBroken;
+    public event System.Action<float> OnShieldDamaged;
     public event System.Action<float> OnPlayerDamaged;
 
     public void ConfigureNanoBarrier(float maxShield)
@@ -153,6 +154,7 @@ public class PlayerHealth : MonoBehaviour, IDamageable
             float absorbed = Mathf.Min(currentBarrierShield, remainingDamage);
             currentBarrierShield -= absorbed;
             remainingDamage -= absorbed;
+            OnShieldDamaged?.Invoke(absorbed);
 
             if (currentBarrierShield <= 0f)
             {

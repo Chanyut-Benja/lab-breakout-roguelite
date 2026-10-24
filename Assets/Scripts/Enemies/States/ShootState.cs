@@ -1,4 +1,6 @@
+using Combat;
 using Enemies.Core;
+using Enemies.Types;
 using UnityEngine;
 
 namespace Enemies.States
@@ -68,16 +70,45 @@ namespace Enemies.States
 
         private void FireProjectile()
         {
-            if (data == null || data.ProjectilePrefab == null) return;
+            GameObject prefabToSpawn = data != null ? data.ProjectilePrefab : null;
+            if (enemy is SpitterEnemy spitter)
+            {
+                GameObject customAcidPrefab = spitter.GetAcidProjectilePrefab();
+                if (customAcidPrefab != null) prefabToSpawn = customAcidPrefab;
+            }
 
             Vector3 spawnPos = enemy.transform.position + (Vector3)(shootDirection * 0.4f);
-            GameObject projObj = Object.Instantiate(data.ProjectilePrefab, spawnPos, Quaternion.identity);
+            GameObject projObj = null;
+
+            if (prefabToSpawn != null)
+            {
+                projObj = Object.Instantiate(prefabToSpawn, spawnPos, Quaternion.identity);
+            }
+            else if (enemy is SpitterEnemy)
+            {
+                // Dynamic fallback for Spitter Acid Projectile
+                projObj = new GameObject("AcidProjectile");
+                projObj.transform.position = spawnPos;
+                SpriteRenderer sr = projObj.AddComponent<SpriteRenderer>();
+                sr.sprite = ProceduralSprites.Shot;
+                sr.color = new Color(0.2f, 1f, 0.25f, 1f); // Acid Green
+                CircleCollider2D col = projObj.AddComponent<CircleCollider2D>();
+                col.isTrigger = true;
+                col.radius = 0.2f;
+                AcidProjectile acidProj = projObj.AddComponent<AcidProjectile>();
+                float acidDmg = (data != null ? data.ProjectileDamage : 8f) * enemy.DifficultyMultiplier;
+                float acidSpd = data != null ? data.ProjectileSpeed : 6f;
+                acidProj.ConfigureAcid(shootDirection, acidDmg, acidSpd);
+                return;
+            }
+
+            if (projObj == null) return;
 
             EnemyProjectile projectile = projObj.GetComponent<EnemyProjectile>();
             if (projectile != null)
             {
-                float dmg = data.ProjectileDamage * enemy.DifficultyMultiplier;
-                float spd = data.ProjectileSpeed;
+                float dmg = (data != null ? data.ProjectileDamage : 10f) * enemy.DifficultyMultiplier;
+                float spd = data != null ? data.ProjectileSpeed : 5f;
                 projectile.Setup(shootDirection, dmg, spd);
             }
         }

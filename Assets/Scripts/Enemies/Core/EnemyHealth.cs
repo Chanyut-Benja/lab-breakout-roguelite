@@ -34,6 +34,7 @@ namespace Enemies.Core
         private float poisonTickAccumulator = 0f;
         private float armorReductionPercent = 0f;
         private float armorReductionRemainingTime = 0f;
+        private float innateDamageReduction = 0f; // เกราะลดดาเมจขั้นต่ำ (Armored Guard ลด 20%)
 
         private Color originalSpriteColor = Color.white;
         private Coroutine flashCoroutine;
@@ -51,8 +52,13 @@ namespace Enemies.Core
         public bool IsDead => isDead;
         public bool IsPoisoned => poisonRemainingTime > 0f;
         public bool IsStunned => enemyBase != null && enemyBase.IsStunned;
-        public float DamageTakenMultiplier => armorReductionRemainingTime > 0f ? (1f + armorReductionPercent) : 1f;
+        public float DamageTakenMultiplier => (armorReductionRemainingTime > 0f ? (1f + armorReductionPercent) : 1f) * Mathf.Clamp01(1f - innateDamageReduction);
         public bool IsInvulnerable { get; set; } = false;
+
+        public void SetDamageReduction(float reductionPercent)
+        {
+            innateDamageReduction = Mathf.Clamp(reductionPercent, 0f, 0.90f);
+        }
 
         private void Awake()
         {
@@ -265,6 +271,10 @@ namespace Enemies.Core
             if (knockback != Vector2.zero && rb != null)
             {
                 float resistance = data != null ? data.KnockbackResistance : 0f;
+                if (enemyBase is Enemies.Types.GuardEnemy guard)
+                {
+                    resistance = Mathf.Max(resistance, guard.KnockbackResistance);
+                }
                 Vector2 effectiveKnockback = knockback * Mathf.Clamp01(1f - resistance);
                 rb.AddForce(effectiveKnockback, ForceMode2D.Impulse);
             }
@@ -329,17 +339,62 @@ namespace Enemies.Core
                 AudioManager.Instance.PlaySFX(data.DieSFX);
             }
 
-            // Spawn EXP drop if configured
-            if (data != null && data.ExpPrefab != null)
+            // 1. Spawn EXP Gem (according to ExpDrop) always
+            int expValue = customExpDrop >= 0 ? customExpDrop : (data != null ? data.ExpDrop : 5);
+            if (expValue > 0)
             {
-                int expValue = customExpDrop >= 0 ? customExpDrop : data.ExpDrop;
-                if (expValue > 0)
+                GameObject expPrefab = data != null ? data.ExpPrefab : null;
+                GameObject expObj = null;
+                if (expPrefab != null)
                 {
-                    GameObject expObj = Instantiate(data.ExpPrefab, transform.position, Quaternion.identity);
+                    expObj = Instantiate(expPrefab, transform.position, Quaternion.identity);
+                }
+                else
+                {
+                    expObj = new GameObject("EXP_Crystal");
+                    expObj.transform.position = transform.position;
+                    SpriteRenderer sr = expObj.AddComponent<SpriteRenderer>();
+                    sr.sprite = ProceduralSprites.Crystal;
+                    sr.sortingOrder = -5;
+                    CircleCollider2D cc = expObj.AddComponent<CircleCollider2D>();
+                    cc.isTrigger = true;
+                    cc.radius = 0.25f;
+                    EXPCrystal crystal = expObj.AddComponent<EXPCrystal>();
+                    crystal.SetExpValue(expValue);
+                }
+
+                if (expObj != null)
+                {
                     EXPCrystal crystal = expObj.GetComponent<EXPCrystal>();
                     if (crystal != null)
                     {
                         crystal.SetExpValue(expValue);
+                    }
+                }
+            }
+
+            // 2. Spawn Credit (according to DropRate) always
+            float creditDropRate = data != null ? data.CreditDropRate : 0.35f;
+            int creditAmount = data != null ? data.CreditDropAmount : 1;
+            if (UnityEngine.Random.value <= creditDropRate)
+            {
+                GameObject creditPrefab = data != null ? data.CreditPrefab : null;
+                GameObject creditObj = null;
+                if (creditPrefab != null)
+                {
+                    creditObj = Instantiate(creditPrefab, transform.position, Quaternion.identity);
+                }
+                else
+                {
+                    creditObj = CreditPickup.CreatePickup(transform.position, creditAmount);
+                }
+
+                if (creditObj != null)
+                {
+                    CreditPickup pickup = creditObj.GetComponent<CreditPickup>();
+                    if (pickup != null)
+                    {
+                        pickup.SetCreditAmount(creditAmount);
                     }
                 }
             }

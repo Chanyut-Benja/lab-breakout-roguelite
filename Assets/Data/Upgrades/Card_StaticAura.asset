@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d38fca33d9138ba4cbaec390cd1ef3ad, type: 3}
+  m_Name: Card_StaticAura
+  m_EditorClassIdentifier: 
+  upgradeTitle: 'NEW: Static Aura (Lv.1)'
+  description: "\u0E1C\u0E48\u0E32\u0E2A\u0E32\u0E22\u0E1F\u0E49\u0E32 1 \u0E15\u0E31\u0E27
+    \u0E17\u0E38\u0E01\u0E23\u0E30\u0E22\u0E30\u0E40\u0E14\u0E34\u0E19 5m (\u0E14\u0E32\u0E40\u0E21\u0E08
+    40)"
+  category: 3
+  weaponType: 0
+  techType: 0
+  boonItemType: 3
+  targetLevel: 1
+  upgradeType: 0
+  value: 0
+  icon: {fileID: 21300000, guid: d4e5f6a7b8c90a1b2c3d4e5f6a7b8c93, type: 3}

@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5341719cf6d6fd045b7a0e45fa5edcf2, type: 3}
+  m_Name: WeaponsData
+  m_EditorClassIdentifier: 
+  nanoBladeIcon: {fileID: 21300000, guid: b49c9498cf35f7e45b5df9008bab2899, type: 3}
+  bioNeedlerIcon: {fileID: 21300000, guid: f76c764143acb6b4584ec2eb07d5a793, type: 3}
+  plasmaBlasterIcon: {fileID: 21300000, guid: ccd2a61e25befa9439242667cbdad0fc, type: 3}
+  teslaOrbIcon: {fileID: 21300000, guid: ae2fb8c544212854180007b0442bd795, type: 3}
+  gravityGrenadierIcon: {fileID: 21300000, guid: f7a5b79dc387fb342b5df693d69931d8, type: 3}

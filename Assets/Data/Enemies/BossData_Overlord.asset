@@ -1,0 +1,94 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1becd26c03954467a56a08b97d11453d, type: 3}
+  m_Name: BossData_Overlord
+  m_EditorClassIdentifier: 
+  enemyName: Overlord Boss
+  enemyId: boss_overlord
+  prefab: {fileID: 1700000000000000001, guid: f2e855ee86a24192add5b58fb27cc137, type: 3}
+  maxHP: 160000
+  knockbackResistance: 0.95
+  moveSpeed: 2.6
+  separationRadius: 1.8
+  separationWeight: 0.5
+  contactDamage: 16
+  contactDamageCooldown: 0.6
+  attackCooldown: 1
+  attackRange: 2
+  detectRange: 30
+  telegraphDuration: 0.7
+  recoverDuration: 1.5
+  dashSpeed: 13
+  dashDuration: 0.55
+  dashTriggerDistance: 10
+  preferredDistance: 4
+  kiteDistance: 2
+  projectileSpeed: 6.5
+  projectileDamage: 15
+  projectilePrefab: {fileID: 3000000000000000001, guid: 3c9d1a8e5204481ca87eb215f79aa4d2, type: 3}
+  undergroundSpeed: 6
+  burrowDuration: 2
+  emergeTelegraphDuration: 0.8
+  emergeAoERadius: 3
+  emergeDamage: 28
+  exposedDuration: 1.5
+  expDrop: 150
+  expPrefab: {fileID: 3995907402648799361, guid: 98e349715c7687d4397e6fcdf11aba6c, type: 3}
+  spawnVFX: {fileID: 0}
+  deathVFX: {fileID: 0}
+  telegraphVFX: {fileID: 0}
+  hitVFX: {fileID: 0}
+  spawnSFX: {fileID: 0}
+  hitSFX: {fileID: 0}
+  dieSFX: {fileID: 0}
+  telegraphSFX: {fileID: 0}
+  attackSFX: {fileID: 0}
+  bossTitle: The Overlord
+  bossRoomNumber: 18
+  phase2HPThreshold: 0.66
+  phase3HPThreshold: 0.33
+  phase2SpeedMultiplier: 1.2
+  phase3SpeedMultiplier: 1.35
+  enrageTimeLimitSeconds: 180
+  phaseTransitionDuration: 1.5
+  introDuration: 1.2
+  attackDecisionCooldown: 1
+  minRepositionDuration: 0.4
+  maxRepositionDuration: 1.2
+  slamRadius: 3.6
+  slamDamage: 30
+  slamTelegraphDuration: 0.8
+  slamKnockback: 14
+  slamShockwaveVFX: {fileID: 0}
+  chargeSpeed: 13
+  chargeDuration: 0.55
+  chargeDamage: 32
+  chargeTelegraphDuration: 0.7
+  chargeKnockback: 14
+  projectileCount: 8
+  fanSpreadAngle: 90
+  fullRadial360: 0
+  radialTelegraphDuration: 0.7
+  minionPrefab: {fileID: 1000000000000000001, guid: b7a1e0c651e2478f8cb0f3f61b0a1d41, type: 3}
+  minionData: {fileID: 11400000, guid: 29d3dc191d080cd449fce5bab4e2ee06, type: 2}
+  minionSpawnCount: 4
+  maxActiveMinionsCap: 6
+  summonTelegraphDuration: 0.8
+  bossBurrowDuration: 2
+  bossEmergeRadius: 4.2
+  bossEmergeDamage: 32
+  bossEmergeTelegraphDuration: 0.8
+  roarSFX: {fileID: 0}
+  phaseTransitionSFX: {fileID: 0}
+  phaseTransitionVFX: {fileID: 0}
+  slamSFX: {fileID: 0}
+  summonSFX: {fileID: 0}

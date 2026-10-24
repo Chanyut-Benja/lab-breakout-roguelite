@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1d388851b7f42ce806f19644fdc0427, type: 3}
+  m_Name: EvolutionDatabase
+  m_EditorClassIdentifier: 
+  executionerMatrixIcon: {fileID: 21300000, guid: 49afd98cc1ccd5a4e88d66e0132dda50, type: 3}
+  plagueSporeSpreaderIcon: {fileID: 21300000, guid: 6401e84d91e321840bc1bccb83154b7c, type: 3}
+  supernovaCannonIcon: {fileID: 21300000, guid: f11c4bc799603ae488949a043c6b819c, type: 3}
+  stormCitadelIcon: {fileID: 21300000, guid: 40496e2d8b0944941b01a94d7dcbee18, type: 3}
+  singularityCannonIcon: {fileID: 21300000, guid: bc6441e455b2ff74a8873d7e5d47920e, type: 3}

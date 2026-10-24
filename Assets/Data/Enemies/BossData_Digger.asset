@@ -1,0 +1,94 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1becd26c03954467a56a08b97d11453d, type: 3}
+  m_Name: BossData_Digger
+  m_EditorClassIdentifier: 
+  enemyName: Digger Boss
+  enemyId: boss_digger
+  prefab: {fileID: 1600000000000000001, guid: bdf112db2928434990ee448ef6d146d8, type: 3}
+  maxHP: 80000
+  knockbackResistance: 0.9
+  moveSpeed: 2.4
+  separationRadius: 1.5
+  separationWeight: 0.5
+  contactDamage: 14
+  contactDamageCooldown: 0.6
+  attackCooldown: 1.2
+  attackRange: 1.8
+  detectRange: 25
+  telegraphDuration: 0.7
+  recoverDuration: 1.5
+  dashSpeed: 10
+  dashDuration: 0.5
+  dashTriggerDistance: 8
+  preferredDistance: 4
+  kiteDistance: 2
+  projectileSpeed: 5.5
+  projectileDamage: 12
+  projectilePrefab: {fileID: 3000000000000000001, guid: 3c9d1a8e5204481ca87eb215f79aa4d2, type: 3}
+  undergroundSpeed: 5.5
+  burrowDuration: 2.2
+  emergeTelegraphDuration: 0.8
+  emergeAoERadius: 2.5
+  emergeDamage: 22
+  exposedDuration: 1.5
+  expDrop: 80
+  expPrefab: {fileID: 3995907402648799361, guid: 98e349715c7687d4397e6fcdf11aba6c, type: 3}
+  spawnVFX: {fileID: 0}
+  deathVFX: {fileID: 0}
+  telegraphVFX: {fileID: 0}
+  hitVFX: {fileID: 0}
+  spawnSFX: {fileID: 0}
+  hitSFX: {fileID: 0}
+  dieSFX: {fileID: 0}
+  telegraphSFX: {fileID: 0}
+  attackSFX: {fileID: 0}
+  bossTitle: The Digger
+  bossRoomNumber: 12
+  phase2HPThreshold: 0.66
+  phase3HPThreshold: 0.33
+  phase2SpeedMultiplier: 1.2
+  phase3SpeedMultiplier: 1.35
+  enrageTimeLimitSeconds: 180
+  phaseTransitionDuration: 1.5
+  introDuration: 1.2
+  attackDecisionCooldown: 1.2
+  minRepositionDuration: 0.5
+  maxRepositionDuration: 1.5
+  slamRadius: 3
+  slamDamage: 20
+  slamTelegraphDuration: 0.8
+  slamKnockback: 10
+  slamShockwaveVFX: {fileID: 0}
+  chargeSpeed: 10
+  chargeDuration: 0.5
+  chargeDamage: 25
+  chargeTelegraphDuration: 0.7
+  chargeKnockback: 12
+  projectileCount: 6
+  fanSpreadAngle: 75
+  fullRadial360: 0
+  radialTelegraphDuration: 0.7
+  minionPrefab: {fileID: 1400000000000000001, guid: 2c8e3a51b94d48378ea91e7fa4509314, type: 3}
+  minionData: {fileID: 11400000, guid: f8a76a36067c42d8b2b4992afbe86df0, type: 2}
+  minionSpawnCount: 2
+  maxActiveMinionsCap: 4
+  summonTelegraphDuration: 0.8
+  bossBurrowDuration: 2.2
+  bossEmergeRadius: 3.8
+  bossEmergeDamage: 28
+  bossEmergeTelegraphDuration: 0.8
+  roarSFX: {fileID: 0}
+  phaseTransitionSFX: {fileID: 0}
+  phaseTransitionVFX: {fileID: 0}
+  slamSFX: {fileID: 0}
+  summonSFX: {fileID: 0}

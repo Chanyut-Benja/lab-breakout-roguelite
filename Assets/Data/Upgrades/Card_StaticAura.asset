@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d38fca33d9138ba4cbaec390cd1ef3ad, type: 3}
   m_Name: Card_StaticAura
   m_EditorClassIdentifier: 
+  id: 
   upgradeTitle: 'NEW: Static Aura (Lv.1)'
   description: "\u0E1C\u0E48\u0E32\u0E2A\u0E32\u0E22\u0E1F\u0E49\u0E32 1 \u0E15\u0E31\u0E27
     \u0E17\u0E38\u0E01\u0E23\u0E30\u0E22\u0E30\u0E40\u0E14\u0E34\u0E19 5m (\u0E14\u0E32\u0E40\u0E21\u0E08

@@ -111,10 +111,15 @@ public class PlayerInventory : MonoBehaviour
     [Header("Evolution Cores")]
     [SerializeField] private int evolutionCores = 0;
 
+    [Header("Reroll Tokens (Black Market & Progression)")]
+    public int RerollCount { get; private set; } = 0;
+    public int BanishCount { get; private set; } = 0;
+
     // Banished items (ตัดการ์ดทิ้งตลอดรันด้วย Banish Token)
     private readonly HashSet<WeaponType> banishedWeapons = new HashSet<WeaponType>();
     private readonly HashSet<TechPassiveType> banishedTechs = new HashSet<TechPassiveType>();
     private readonly HashSet<BoonItemType> banishedBoons = new HashSet<BoonItemType>();
+    private readonly HashSet<string> banishedItemIds = new HashSet<string>();
 
     public IReadOnlyList<WeaponSlotEntry> Weapons => weapons;
     public IReadOnlyList<TechSlotEntry> TechPassives => techPassives;
@@ -132,10 +137,34 @@ public class PlayerInventory : MonoBehaviour
     public bool IsWeaponBanished(WeaponType type) => banishedWeapons.Contains(type);
     public bool IsTechBanished(TechPassiveType type) => banishedTechs.Contains(type);
     public bool IsBoonBanished(BoonItemType type) => banishedBoons.Contains(type);
+    public bool IsItemBanished(string itemId) => !string.IsNullOrEmpty(itemId) && banishedItemIds.Contains(itemId);
+
+    public void BanishItem(string itemId)
+    {
+        if (string.IsNullOrEmpty(itemId)) return;
+        banishedItemIds.Add(itemId);
+
+        if (itemId.StartsWith("weapon_") && Enum.TryParse<WeaponType>(itemId.Substring("weapon_".Length), out var wType))
+        {
+            banishedWeapons.Add(wType);
+        }
+        else if (itemId.StartsWith("tech_") && Enum.TryParse<TechPassiveType>(itemId.Substring("tech_".Length), out var tType))
+        {
+            banishedTechs.Add(tType);
+        }
+        else if (itemId.StartsWith("boon_") && Enum.TryParse<BoonItemType>(itemId.Substring("boon_".Length), out var bType))
+        {
+            banishedBoons.Add(bType);
+        }
+    }
 
     public void BanishCard(LevelUpUpgradeData card)
     {
         if (card == null) return;
+        if (!string.IsNullOrEmpty(card.Id))
+        {
+            banishedItemIds.Add(card.Id);
+        }
 
         switch (card.category)
         {
@@ -164,6 +193,8 @@ public class PlayerInventory : MonoBehaviour
     public event Action<BoonSlotEntry> OnBoonUpgraded;
     public event Action<BoonSlotEntry> OnBoonResonated;
     public event Action<int> OnEvolutionCoreCountChanged;
+    public event Action<int> OnRerollCountChanged;
+    public event Action<int> OnBanishCountChanged;
 
     public static event Action<WeaponSlotEntry> OnWeaponAddedStatic;
     public static event Action<WeaponSlotEntry> OnWeaponUpgradedStatic;
@@ -174,6 +205,8 @@ public class PlayerInventory : MonoBehaviour
     public static event Action<BoonSlotEntry> OnBoonUpgradedStatic;
     public static event Action<BoonSlotEntry> OnBoonResonatedStatic;
     public static event Action<int> OnEvolutionCoreCountChangedStatic;
+    public static event Action<int> OnRerollCountChangedStatic;
+    public static event Action<int> OnBanishCountChangedStatic;
 
     public static PlayerInventory GetOrCreate()
     {
@@ -803,6 +836,50 @@ public class PlayerInventory : MonoBehaviour
     /// <summary>
     /// สำหรับ DebugCheats [I]: ปรับอาวุธทุกชิ้นในตัวเป็น Lv.5 และ Tech ทุกชิ้นเป็น Lv.1+ ทันที
     /// </summary>
+    public void AddReroll(int count = 1)
+    {
+        if (count <= 0) return;
+        RerollCount += count;
+        OnRerollCountChanged?.Invoke(RerollCount);
+        OnRerollCountChangedStatic?.Invoke(RerollCount);
+        Debug.Log($"[PlayerInventory] Added {count} Reroll. Total RerollCount: {RerollCount}");
+    }
+
+    public bool TryUseReroll()
+    {
+        if (RerollCount > 0)
+        {
+            RerollCount--;
+            OnRerollCountChanged?.Invoke(RerollCount);
+            OnRerollCountChangedStatic?.Invoke(RerollCount);
+            Debug.Log($"[PlayerInventory] Used 1 Reroll. Remaining RerollCount: {RerollCount}");
+            return true;
+        }
+        return false;
+    }
+
+    public void AddBanish(int count = 1)
+    {
+        if (count <= 0) return;
+        BanishCount += count;
+        OnBanishCountChanged?.Invoke(BanishCount);
+        OnBanishCountChangedStatic?.Invoke(BanishCount);
+        Debug.Log($"[PlayerInventory] Added {count} Banish. Total BanishCount: {BanishCount}");
+    }
+
+    public bool TryUseBanish()
+    {
+        if (BanishCount > 0)
+        {
+            BanishCount--;
+            OnBanishCountChanged?.Invoke(BanishCount);
+            OnBanishCountChangedStatic?.Invoke(BanishCount);
+            Debug.Log($"[PlayerInventory] Used 1 Banish. Remaining BanishCount: {BanishCount}");
+            return true;
+        }
+        return false;
+    }
+
     public void DebugSetAllHeldWeaponsLv5AndTechsLv1()
     {
         EnsureStarterWeaponInitialized();
@@ -1112,7 +1189,7 @@ public class PlayerInventory : MonoBehaviour
         // 1. Weapons (Max 3 Slots, Max Lv.5)
         foreach (WeaponType weaponType in Enum.GetValues(typeof(WeaponType)))
         {
-            if (IsWeaponBanished(weaponType)) continue;
+            if (IsWeaponBanished(weaponType) || IsItemBanished($"weapon_{weaponType}")) continue;
 
             WeaponSlotEntry existing = GetWeaponSlot(weaponType);
             if (existing != null)
@@ -1144,7 +1221,7 @@ public class PlayerInventory : MonoBehaviour
         // 2. Tech Passives (Max 3 Slots, Max Lv.5)
         foreach (TechPassiveType techType in Enum.GetValues(typeof(TechPassiveType)))
         {
-            if (IsTechBanished(techType)) continue;
+            if (IsTechBanished(techType) || IsItemBanished($"tech_{techType}")) continue;
 
             TechSlotEntry existing = GetTechSlot(techType);
             if (existing != null)
@@ -1251,7 +1328,7 @@ public class PlayerInventory : MonoBehaviour
 
         foreach (BoonItemType boonType in Enum.GetValues(typeof(BoonItemType)))
         {
-            if (IsBoonBanished(boonType)) continue;
+            if (IsBoonBanished(boonType) || IsItemBanished($"boon_{boonType}")) continue;
 
             BoonSlotEntry existing = GetBoonSlot(boonType);
             WeaponType matchingWeapon = GetMatchingWeapon(boonType);

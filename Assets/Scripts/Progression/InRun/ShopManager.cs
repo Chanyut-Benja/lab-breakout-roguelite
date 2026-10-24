@@ -613,6 +613,16 @@ public class ShopManager : MonoBehaviour
                 break;
 
             case ShopItemType.RerollToken:
+                PlayerInventory invReroll = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+                if (invReroll != null)
+                {
+                    invReroll.AddReroll(1);
+                }
+                else if (CurrencyManager.Instance != null)
+                {
+                    CurrencyManager.Instance.AddReroll(1);
+                }
+
                 if (LevelUpManager.Instance != null)
                 {
                     LevelUpManager.Instance.AddRerollTokens(1);
@@ -620,10 +630,21 @@ public class ShopManager : MonoBehaviour
                 break;
 
             case ShopItemType.BanishToken:
+                PlayerInventory invBanish = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+                if (invBanish != null)
+                {
+                    invBanish.AddBanish(1);
+                }
+                else if (CurrencyManager.Instance != null)
+                {
+                    CurrencyManager.Instance.AddBanish(1);
+                }
+
                 if (LevelUpManager.Instance != null)
                 {
                     LevelUpManager.Instance.AddBanishTokens(1);
                 }
+                Debug.Log($"[ShopManager] Purchased Banish Token! BanishCount is now {(invBanish != null ? invBanish.BanishCount : 1)}");
                 break;
 
             case ShopItemType.OverdriveStim:

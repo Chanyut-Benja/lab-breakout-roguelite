@@ -60,6 +60,7 @@ public class BoonManager : MonoBehaviour
             return;
         }
 
+        EnsureBoonSelectionUI();
         HookInventoryEvents();
         InitializeNewBoonPool();
     }
@@ -67,6 +68,15 @@ public class BoonManager : MonoBehaviour
     private void OnDestroy()
     {
         UnhookInventoryEvents();
+    }
+
+    private void EnsureBoonSelectionUI()
+    {
+        if (boonPanel != null)
+        {
+            BoonSelectionUI ui = boonPanel.GetComponent<BoonSelectionUI>();
+            if (ui == null) ui = boonPanel.AddComponent<BoonSelectionUI>();
+        }
     }
 
     private void HookInventoryEvents()
@@ -296,6 +306,7 @@ public class BoonManager : MonoBehaviour
 
             if (currentOfferedSlotBoons.Count > 0)
             {
+                if (BoonSelectionUI.Instance != null) BoonSelectionUI.Instance.RefreshUI();
                 return;
             }
         }
@@ -331,6 +342,79 @@ public class BoonManager : MonoBehaviour
                 cardIconImages[i].gameObject.SetActive(s != null);
             }
         }
+
+        if (BoonSelectionUI.Instance != null) BoonSelectionUI.Instance.RefreshUI();
+    }
+
+    public void RerollChoices()
+    {
+        ResolveReferences();
+        currentOfferedSlotBoons.Clear();
+        currentOfferedBoons.Clear();
+
+        PlayerInventory inventory = PlayerInventory.GetOrCreate();
+        if (inventory != null)
+        {
+            List<LevelUpUpgradeData> weightedBoons = inventory.GenerateWeightedBoonCards(3);
+            for (int i = 0; i < weightedBoons.Count; i++)
+            {
+                currentOfferedSlotBoons.Add(weightedBoons[i]);
+
+                if (cardTitleTexts != null && i < cardTitleTexts.Length && cardTitleTexts[i] != null)
+                    cardTitleTexts[i].text = weightedBoons[i].upgradeTitle;
+
+                if (cardDescTexts != null && i < cardDescTexts.Length && cardDescTexts[i] != null)
+                    cardDescTexts[i].text = weightedBoons[i].description;
+
+                if (cardIconImages != null && i < cardIconImages.Length && cardIconImages[i] != null)
+                {
+                    Sprite s = weightedBoons[i].icon ?? PlayerInventory.GetBoonIcon(weightedBoons[i].boonItemType);
+                    cardIconImages[i].sprite = s;
+                    cardIconImages[i].color = Color.white;
+                    cardIconImages[i].preserveAspect = true;
+                    cardIconImages[i].gameObject.SetActive(s != null);
+                }
+            }
+
+            if (currentOfferedSlotBoons.Count > 0)
+            {
+                if (BoonSelectionUI.Instance != null) BoonSelectionUI.Instance.RefreshUI();
+                return;
+            }
+        }
+
+        if (boonPool.Count == 0)
+        {
+            InitializeNewBoonPool();
+        }
+
+        List<BoonData> tempPool = new List<BoonData>(boonPool);
+        for (int i = 0; i < 3; i++)
+        {
+            if (tempPool.Count == 0) break;
+
+            int randomIndex = Random.Range(0, tempPool.Count);
+            BoonData selectedBoon = tempPool[randomIndex];
+            currentOfferedBoons.Add(selectedBoon);
+            tempPool.RemoveAt(randomIndex);
+
+            if (cardTitleTexts != null && i < cardTitleTexts.Length && cardTitleTexts[i] != null)
+                cardTitleTexts[i].text = selectedBoon.boonTitle;
+
+            if (cardDescTexts != null && i < cardDescTexts.Length && cardDescTexts[i] != null)
+                cardDescTexts[i].text = selectedBoon.description;
+
+            if (cardIconImages != null && i < cardIconImages.Length && cardIconImages[i] != null)
+            {
+                Sprite s = selectedBoon.icon ?? PlayerInventory.GetBoonIcon(selectedBoon.boonItemType);
+                cardIconImages[i].sprite = s;
+                cardIconImages[i].color = Color.white;
+                cardIconImages[i].preserveAspect = true;
+                cardIconImages[i].gameObject.SetActive(s != null);
+            }
+        }
+
+        if (BoonSelectionUI.Instance != null) BoonSelectionUI.Instance.RefreshUI();
     }
 
     public void ApplyChosenBoon(BoonData boon)

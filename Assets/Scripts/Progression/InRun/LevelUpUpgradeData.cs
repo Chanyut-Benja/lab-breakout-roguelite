@@ -21,6 +21,7 @@ public enum LevelUpUpgradeType
 [CreateAssetMenu(fileName = "NewUpgradeData", menuName = "Progression/LevelUp Upgrade Data")]
 public class LevelUpUpgradeData : ScriptableObject
 {
+    [SerializeField] private string id;
     public string upgradeTitle;
     [TextArea(2, 4)] public string description;
     public UpgradeCategory category = UpgradeCategory.LegacyStat;
@@ -36,6 +37,26 @@ public class LevelUpUpgradeData : ScriptableObject
     public float value;
     public Sprite icon;
 
+    public string Id
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(id)) return id;
+            switch (category)
+            {
+                case UpgradeCategory.Weapon:
+                    return $"weapon_{weaponType}";
+                case UpgradeCategory.TechPassive:
+                    return $"tech_{techType}";
+                case UpgradeCategory.Boon:
+                    return $"boon_{boonItemType}";
+                default:
+                    return string.IsNullOrEmpty(upgradeTitle) ? name : upgradeTitle;
+            }
+        }
+        set => id = value;
+    }
+
     public static LevelUpUpgradeData Create(string title, string desc, LevelUpUpgradeType type, float val)
     {
         LevelUpUpgradeData data = CreateInstance<LevelUpUpgradeData>();
@@ -44,6 +65,7 @@ public class LevelUpUpgradeData : ScriptableObject
         data.description = desc;
         data.upgradeType = type;
         data.value = val;
+        data.id = $"stat_{type}";
         return data;
     }
 
@@ -56,6 +78,7 @@ public class LevelUpUpgradeData : ScriptableObject
         data.upgradeTitle = title;
         data.description = desc;
         data.icon = PlayerInventory.GetWeaponIcon(weapon);
+        data.id = $"weapon_{weapon}";
         return data;
     }
 
@@ -68,6 +91,7 @@ public class LevelUpUpgradeData : ScriptableObject
         data.upgradeTitle = title;
         data.description = desc;
         data.icon = PlayerInventory.GetTechPassiveIcon(tech);
+        data.id = $"tech_{tech}";
         return data;
     }
 
@@ -80,6 +104,7 @@ public class LevelUpUpgradeData : ScriptableObject
         data.upgradeTitle = title;
         data.description = desc;
         data.icon = PlayerInventory.GetBoonIcon(boon);
+        data.id = $"boon_{boon}";
         return data;
     }
 }

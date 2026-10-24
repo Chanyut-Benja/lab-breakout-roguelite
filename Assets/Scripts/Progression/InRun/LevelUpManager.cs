@@ -39,14 +39,16 @@ public class LevelUpManager : MonoBehaviour
 
     private readonly Queue<int> pendingLevels = new Queue<int>();
     private readonly List<LevelUpUpgradeData> currentOfferedUpgrades = new List<LevelUpUpgradeData>();
+    private readonly HashSet<string> banishedItemIds = new HashSet<string>();
     private bool isSelecting = false;
     private bool isFromDoor = false; // ตัวแปรเช็กว่าเปิดการ์ดมาจากประตูหรือไม่
     private bool isFromShop = false;
     private bool isBanishModeActive = false;
 
-    public int RerollTokens => rerollTokens;
-    public int BanishTokens => banishTokens;
+    public int RerollTokens => PlayerInventory.Instance != null ? PlayerInventory.Instance.RerollCount : rerollTokens;
+    public int BanishTokens => PlayerInventory.Instance != null ? PlayerInventory.Instance.BanishCount : banishTokens;
     public bool IsBanishModeActive => isBanishModeActive;
+    public IReadOnlyCollection<string> BanishedItemIds => banishedItemIds;
 
     private void Awake()
     {
@@ -64,6 +66,7 @@ public class LevelUpManager : MonoBehaviour
         ApplyDarkSciFiLayout();
         EnsureTopSortingOrder();
         SetupCardButtonListeners();
+        EnsureLevelUpUIComponent();
     }
 
     private void InitializeDefaultPoolIfEmpty()
@@ -83,6 +86,18 @@ public class LevelUpManager : MonoBehaviour
             upgradePool.Add(TechPassiveData.CreateUpgradeCard(TechPassiveType.OverclockChip, 1));
             upgradePool.Add(TechPassiveData.CreateUpgradeCard(TechPassiveType.BioFuelTank, 1));
             upgradePool.Add(TechPassiveData.CreateUpgradeCard(TechPassiveType.GravitonCapacitor, 1));
+        }
+    }
+
+    private void EnsureLevelUpUIComponent()
+    {
+        if (levelUpPanel != null)
+        {
+            LevelUpUI ui = levelUpPanel.GetComponent<LevelUpUI>();
+            if (ui == null)
+            {
+                ui = levelUpPanel.AddComponent<LevelUpUI>();
+            }
         }
     }
 
@@ -126,15 +141,136 @@ public class LevelUpManager : MonoBehaviour
     {
         if (amount <= 0) return;
         banishTokens += amount;
+        PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        if (inv != null && inv.BanishCount < banishTokens)
+        {
+            inv.AddBanish(amount);
+        }
         UpdateTokenButtonsUI();
         Debug.Log($"[LevelUpManager] Added +{amount} Banish Token! (Total Banish Tokens: {banishTokens})");
     }
 
+    public void BanishItem(string itemId)
+    {
+        if (string.IsNullOrEmpty(itemId)) return;
+        banishedItemIds.Add(itemId);
+        PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        if (inv != null)
+        {
+            inv.BanishItem(itemId);
+        }
+    }
+
+    public List<LevelUpUpgradeData> GetRandomUpgrades(int count = 3)
+    {
+        List<LevelUpUpgradeData> result = new List<LevelUpUpgradeData>();
+        PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        if (inv != null)
+        {
+            List<LevelUpUpgradeData> pool = (isFromDoor || isFromShop)
+                ? inv.GenerateWeightedBoonCards(count + banishedItemIds.Count + 4)
+                : inv.GenerateWeightedLevelUpCards(count + banishedItemIds.Count + 4);
+
+            for (int i = 0; i < pool.Count; i++)
+            {
+                if (pool[i] != null && !banishedItemIds.Contains(pool[i].Id))
+                {
+                    result.Add(pool[i]);
+                    if (result.Count >= count) break;
+                }
+            }
+        }
+        return result;
+    }
+
+    public LevelUpUpgradeData ReplaceCardAt(int cardIndex)
+    {
+        if (cardIndex < 0 || cardIndex >= currentOfferedUpgrades.Count) return null;
+
+        LevelUpUpgradeData oldCard = currentOfferedUpgrades[cardIndex];
+        if (oldCard != null)
+        {
+            BanishItem(oldCard.Id);
+            if (UpgradeManager.Instance != null)
+            {
+                UpgradeManager.Instance.BanishItem(oldCard.Id);
+            }
+        }
+
+        LevelUpUpgradeData replacement = null;
+        if (UpgradeManager.Instance != null)
+        {
+            replacement = UpgradeManager.Instance.GetRandomReplacement(currentOfferedUpgrades, isFromDoor || isFromShop);
+        }
+
+        if (replacement == null)
+        {
+            PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+            if (inv != null)
+            {
+                List<LevelUpUpgradeData> pool = (isFromDoor || isFromShop)
+                    ? inv.GenerateWeightedBoonCards(8)
+                    : inv.GenerateWeightedLevelUpCards(8);
+
+                for (int i = 0; i < pool.Count; i++)
+                {
+                    if (pool[i] != null &&
+                        !banishedItemIds.Contains(pool[i].Id) &&
+                        !currentOfferedUpgrades.Exists(c => c != null && c.Id == pool[i].Id))
+                    {
+                        replacement = pool[i];
+                        break;
+                    }
+                }
+            }
+        }
+
+        currentOfferedUpgrades[cardIndex] = replacement;
+        BindCardsToUI();
+        RefreshAllCardUIs();
+
+        Debug.Log($"[LevelUpManager] Card slot {cardIndex} replaced with: {(replacement != null ? replacement.upgradeTitle : "None")}");
+        return replacement;
+    }
+
+    public void RefreshAllCardUIs()
+    {
+        if (cardButtons == null) return;
+        for (int i = 0; i < cardButtons.Length; i++)
+        {
+            if (cardButtons[i] != null)
+            {
+                LevelUpCardUI cardUI = cardButtons[i].GetComponent<LevelUpCardUI>();
+                if (cardUI != null)
+                {
+                    cardUI.UpdateBanishDisplay();
+                }
+            }
+        }
+    }
+
     public void UseRerollToken()
     {
-        if (!isSelecting || rerollTokens <= 0) return;
+        if (!isSelecting) return;
+        bool used = false;
+        if (PlayerInventory.Instance != null && PlayerInventory.Instance.RerollCount > 0)
+        {
+            used = PlayerInventory.Instance.TryUseReroll();
+        }
+        else if (rerollTokens > 0)
+        {
+            rerollTokens--;
+            used = true;
+        }
 
-        rerollTokens--;
+        if (!used) return;
+
+        RerollCards();
+        Debug.Log($"[LevelUpManager] Used 1 Reroll. Remaining Reroll Tokens: {(PlayerInventory.Instance != null ? PlayerInventory.Instance.RerollCount : rerollTokens)}");
+    }
+
+    public void RerollCards()
+    {
         isBanishModeActive = false;
 
         if (isFromDoor || isFromShop)
@@ -147,12 +283,17 @@ public class LevelUpManager : MonoBehaviour
         }
 
         UpdateTokenButtonsUI();
-        Debug.Log($"[LevelUpManager] Used 1 Reroll Token. Remaining Reroll Tokens: {rerollTokens}");
+        RefreshAllCardUIs();
+        if (LevelUpUI.Instance != null)
+        {
+            LevelUpUI.Instance.RefreshUI();
+        }
     }
 
     public void ToggleBanishMode()
     {
-        if (!isSelecting || banishTokens <= 0) return;
+        int availableBanish = PlayerInventory.Instance != null ? PlayerInventory.Instance.BanishCount : banishTokens;
+        if (!isSelecting || availableBanish <= 0) return;
 
         isBanishModeActive = !isBanishModeActive;
         UpdateTokenButtonsUI();
@@ -160,24 +301,35 @@ public class LevelUpManager : MonoBehaviour
 
     private void UpdateTokenButtonsUI()
     {
+        int availableRerolls = PlayerInventory.Instance != null ? PlayerInventory.Instance.RerollCount : rerollTokens;
+        int availableBanish = PlayerInventory.Instance != null ? PlayerInventory.Instance.BanishCount : banishTokens;
+        banishTokens = availableBanish;
+
         if (rerollButton != null)
         {
-            rerollButton.interactable = rerollTokens > 0;
+            rerollButton.interactable = availableRerolls > 0;
         }
         if (rerollButtonText != null)
         {
-            rerollButtonText.text = $"Reroll ({rerollTokens})";
+            rerollButtonText.text = $"Reroll ({availableRerolls})";
         }
 
         if (banishModeButton != null)
         {
-            banishModeButton.interactable = banishTokens > 0;
+            banishModeButton.interactable = availableBanish > 0;
         }
         if (banishButtonText != null)
         {
             banishButtonText.text = isBanishModeActive
-                ? $"BANISH: PICK CARD ({banishTokens})"
-                : $"Banish ({banishTokens})";
+                ? $"BANISH: PICK CARD ({availableBanish})"
+                : $"Banish ({availableBanish})";
+        }
+
+        RefreshAllCardUIs();
+
+        if (LevelUpUI.Instance != null)
+        {
+            LevelUpUI.Instance.RefreshUI();
         }
     }
 
@@ -782,6 +934,14 @@ public class LevelUpManager : MonoBehaviour
                 cardLevelBadgeTexts[i].fontStyle = FontStyle.Bold;
                 cardLevelBadgeTexts[i].raycastTarget = false;
             }
+
+            // 6. LevelUpCardUI: Banish Button Integration
+            if (cardButtons != null && i < cardButtons.Length && cardButtons[i] != null)
+            {
+                LevelUpCardUI cardUI = cardButtons[i].GetComponent<LevelUpCardUI>();
+                if (cardUI == null) cardUI = cardButtons[i].gameObject.AddComponent<LevelUpCardUI>();
+                cardUI.Setup(i, selectedUpgrade, SelectUpgrade, (idx) => ReplaceCardAt(idx));
+            }
         }
 
         UpdateTokenButtonsUI();
@@ -836,16 +996,20 @@ public class LevelUpManager : MonoBehaviour
         if (chosen == null) return;
 
         // หากเปิดโหมด Banish อยู่ ให้ตัดการ์ดใบนั้นทิ้งตลอดรันโดยไม่เสียสิทธิ์เลือกการ์ดในรอบนี้
-        if (isBanishModeActive && banishTokens > 0)
+        if (isBanishModeActive)
         {
-            banishTokens--;
             isBanishModeActive = false;
+            bool used = false;
+            if (PlayerInventory.Instance != null) used = PlayerInventory.Instance.TryUseBanish();
+            else if (CurrencyManager.Instance != null) used = CurrencyManager.Instance.TryUseBanish();
+            else if (banishTokens > 0) { banishTokens--; used = true; }
 
-            PlayerInventory.GetOrCreate()?.BanishCard(chosen);
-            currentOfferedUpgrades[cardIndex] = null;
-            BindCardsToUI();
-            Debug.Log($"[LevelUpManager] Banished card '{chosen.upgradeTitle}'. Remaining Banish Tokens: {banishTokens}");
-            return;
+            if (used)
+            {
+                ReplaceCardAt(cardIndex);
+                UpdateTokenButtonsUI();
+                return;
+            }
         }
 
         // Apply stat / slot item ไปยัง PlayerStats & PlayerInventory
@@ -910,5 +1074,172 @@ public class LevelUpManager : MonoBehaviour
             levelUpPanel.SetActive(false);
         }
         if (resumeGame) Time.timeScale = 1f;
+    }
+}
+
+/// <summary>
+/// UpgradeManager จัดการ Banished Item Pool (แบนไอเทมออกจากรัน) ตลอดการเล่นรอบปัจจุบัน
+/// และเป็นตัวกลางในการสุ่มอัปเกรดหรือสุ่มการ์ดใบใหม่มาทดแทนการ์ดที่ถูกแบน
+/// </summary>
+public class UpgradeManager : MonoBehaviour
+{
+    private static UpgradeManager instance;
+    public static UpgradeManager Instance
+    {
+        get
+        {
+            if (instance == null)
+            {
+#if UNITY_2023_1_OR_NEWER || UNITY_6000_0_OR_NEWER
+                instance = FindFirstObjectByType<UpgradeManager>();
+#else
+                instance = FindObjectOfType<UpgradeManager>();
+#endif
+                if (instance == null)
+                {
+                    GameObject go = new GameObject("UpgradeManager");
+                    instance = go.AddComponent<UpgradeManager>();
+                    DontDestroyOnLoad(go);
+                }
+            }
+            return instance;
+        }
+        private set => instance = value;
+    }
+
+    // จัดการ Banished Item Pool ตามข้อ 2
+    private HashSet<string> banishedItemIds = new HashSet<string>();
+    public IReadOnlyCollection<string> BanishedItemIds => banishedItemIds;
+
+    public static event System.Action<string> OnItemBanished;
+
+    private void Awake()
+    {
+        if (instance == null)
+        {
+            instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else if (instance != this)
+        {
+            Destroy(gameObject);
+        }
+    }
+
+    /// <summary>
+    /// เพิ่ม itemId เข้า banishedItemIds และกระจายสถานะแบนไปยังระบบที่เกี่ยวข้อง
+    /// </summary>
+    public void BanishItem(string itemId)
+    {
+        if (string.IsNullOrEmpty(itemId)) return;
+
+        if (banishedItemIds.Add(itemId))
+        {
+            Debug.Log($"[UpgradeManager] Banished Item: '{itemId}'. Total banished items: {banishedItemIds.Count}");
+            OnItemBanished?.Invoke(itemId);
+        }
+
+        // เชื่อมต่อเข้า PlayerInventory
+        PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        if (inv != null)
+        {
+            inv.BanishItem(itemId);
+        }
+
+        // เชื่อมต่อเข้า LevelUpManager
+        if (LevelUpManager.Instance != null)
+        {
+            LevelUpManager.Instance.BanishItem(itemId);
+        }
+    }
+
+    public bool IsItemBanished(string itemId)
+    {
+        if (string.IsNullOrEmpty(itemId)) return false;
+        return banishedItemIds.Contains(itemId);
+    }
+
+    public void ResetBanishedPool()
+    {
+        banishedItemIds.Clear();
+    }
+
+    /// <summary>
+    /// สุ่มการ์ดอัปเกรดโดยกรอง (Filter) ข้ามไอเทมที่มี ID อยู่ใน banishedItemIds ออกจากตัวเลือกทั้งหมดตลอดรันนี้
+    /// </summary>
+    public List<LevelUpUpgradeData> GetRandomUpgrades(int count = 3)
+    {
+        List<LevelUpUpgradeData> result = new List<LevelUpUpgradeData>();
+        PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        if (inv != null)
+        {
+            List<LevelUpUpgradeData> pool = inv.GenerateWeightedLevelUpCards(count + banishedItemIds.Count + 4);
+            for (int i = 0; i < pool.Count; i++)
+            {
+                if (pool[i] != null && !banishedItemIds.Contains(pool[i].Id))
+                {
+                    result.Add(pool[i]);
+                    if (result.Count >= count) break;
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// สุ่มไอเทมใหม่ที่ไม่ซ้ำและไม่อยู่ใน Banish List มาแทนที่การ์ดใบที่ถูกแบนทันที
+    /// </summary>
+    public LevelUpUpgradeData GetRandomReplacement(List<LevelUpUpgradeData> currentCards = null, bool isBoonOnly = false)
+    {
+        PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        if (inv == null) return null;
+
+        HashSet<string> excludedIds = new HashSet<string>(banishedItemIds);
+        if (currentCards != null)
+        {
+            for (int i = 0; i < currentCards.Count; i++)
+            {
+                if (currentCards[i] != null && !string.IsNullOrEmpty(currentCards[i].Id))
+                {
+                    excludedIds.Add(currentCards[i].Id);
+                }
+            }
+        }
+
+        if (isBoonOnly)
+        {
+            List<LevelUpUpgradeData> boonCards = inv.GenerateWeightedBoonCards(10);
+            for (int i = 0; i < boonCards.Count; i++)
+            {
+                if (boonCards[i] != null && !excludedIds.Contains(boonCards[i].Id))
+                {
+                    return boonCards[i];
+                }
+            }
+        }
+        else
+        {
+            // ลองสุ่มจาก Level Up การ์ดปกติก่อน
+            List<LevelUpUpgradeData> standardCards = inv.GenerateWeightedLevelUpCards(10);
+            for (int i = 0; i < standardCards.Count; i++)
+            {
+                if (standardCards[i] != null && !excludedIds.Contains(standardCards[i].Id))
+                {
+                    return standardCards[i];
+                }
+            }
+
+            // ถ้าไม่มีแล้ว ให้ลองสุ่มจาก Boon
+            List<LevelUpUpgradeData> fallbackBoons = inv.GenerateWeightedBoonCards(10);
+            for (int i = 0; i < fallbackBoons.Count; i++)
+            {
+                if (fallbackBoons[i] != null && !excludedIds.Contains(fallbackBoons[i].Id))
+                {
+                    return fallbackBoons[i];
+                }
+            }
+        }
+
+        return null;
     }
 }

@@ -350,6 +350,11 @@ public class ShopSlotUI : MonoBehaviour
         }
     }
 
+    public void MarkAsPurchased()
+    {
+        MarkAsSoldOut();
+    }
+
     public bool IsPurchased => isPurchased;
     public ShopItemData Item => myItem;
 }

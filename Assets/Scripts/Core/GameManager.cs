@@ -73,10 +73,20 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
+        // If PauseManager is present in the scene, PauseManager handles ESC directly to avoid double-toggling
+        if (FindFirstObjectByType<PauseManager>() != null) return;
+
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             TogglePauseMenu();
         }
+    }
+
+    public void ResetRunState()
+    {
+        isGameOver = false;
+        isPaused = false;
+        Time.timeScale = 1f;
     }
 
     public void TogglePauseMenu()

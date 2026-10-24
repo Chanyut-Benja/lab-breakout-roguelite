@@ -53,6 +53,31 @@ public class GameOverManager : MonoBehaviour
     public int RunCredits => runCredits;
     public int TotalEnemiesKilled => totalEnemiesKilled;
     public float RunElapsedTime => runElapsedTime;
+    public bool IsRunActive => isRunActive;
+    public bool IsGameOverActive => (gameOverPanel != null && gameOverPanel.activeInHierarchy) || (victoryPanel != null && victoryPanel.activeInHierarchy);
+
+    /// <summary>
+    /// ล้างข้อมูล In-Run Currency และสถิติของรอบเล่นปัจจุบัน
+    /// </summary>
+    public void ResetRunData()
+    {
+        runCredits = 0;
+        collectedRP = 0;
+        inRunBonusRP = 0;
+        normalRoomsCleared = 0;
+        bossesDefeated = 0;
+        floor1Completed = false;
+        floor2Completed = false;
+        hasFinalizedRunRP = false;
+        totalEnemiesKilled = 0;
+        runElapsedTime = 0f;
+        isRunActive = true;
+
+        if (gameOverPanel != null) gameOverPanel.SetActive(false);
+        if (victoryPanel != null) victoryPanel.SetActive(false);
+
+        OnCreditsChanged?.Invoke(0);
+    }
 
     // Dark Sci-Fi Color Palette
     private static readonly Color BgDarkOverlay = new Color(0.02f, 0.03f, 0.05f, 0.88f);

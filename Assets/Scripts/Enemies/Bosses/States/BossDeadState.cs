@@ -44,10 +44,11 @@ namespace Enemies.Bosses.States
                 Object.Instantiate(boss.Data.DeathVFX, boss.transform.position, Quaternion.identity);
             }
 
-            // Play Die SFX
-            if (boss.Data != null && boss.Data.DieSFX != null && AudioManager.Instance != null)
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayMonsterDeadSFX();
+
+            if (UI.BossHealthBarUI.Instance != null)
             {
-                AudioManager.Instance.PlaySFX(boss.Data.DieSFX);
+                UI.BossHealthBarUI.Instance.HideBossBar();
             }
 
             boss.NotifyBossDefeated();

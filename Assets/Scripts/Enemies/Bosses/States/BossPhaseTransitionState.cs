@@ -30,6 +30,8 @@ namespace Enemies.Bosses.States
         {
             base.Enter();
 
+            Time.timeScale = 1f;
+
             boss.StopMovement();
 
             if (boss.Health != null)
@@ -83,6 +85,11 @@ namespace Enemies.Bosses.States
         {
             base.Tick();
 
+            if (Time.timeScale <= 0f)
+            {
+                Time.timeScale = 1f;
+            }
+
             if (StateElapsedTime >= duration)
             {
                 stateMachine.ChangeState(nextState);
@@ -92,6 +99,8 @@ namespace Enemies.Bosses.States
         public override void Exit()
         {
             base.Exit();
+
+            Time.timeScale = 1f;
 
             if (boss.Health != null)
             {

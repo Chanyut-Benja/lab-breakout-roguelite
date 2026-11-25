@@ -13,6 +13,10 @@ namespace Enemies.Bosses
     /// - Phase 2 (66% - 33%): Move Speed +20%, adds BurrowEmerge + MultiSummon (เสกลูกน้องหลายชนิดพร้อมกัน).
     /// - Phase 3 (< 33% or 180s - Enrage!): Move Speed +35%, RadialBurst becomes full 360 circle burst,
     ///   RapidBarrage fires 16 rapid fireballs, and executes 2-Attack Combos (chains two non-repeating attacks back-to-back).
+    ///
+    /// Skill rotation: the Overlord owns the signature moves of every boss (Brute charge + slam, Digger burrow,
+    /// Doctor acid flasks + mutant squad, Architect turrets + gatling, Stormcaller lightning + spiral bullets, nova burst),
+    /// in stronger versions. It never repeats a skill until it has used every skill available to it, then the cycle restarts.
     /// </summary>
     public class OverlordBoss : BossBase
     {
@@ -37,6 +41,22 @@ namespace Enemies.Bosses
         private BossBurrowEmergeState burrowEmergeAttack;
         private BossRapidBarrageState rapidBarrageAttack;
         private BossMultiSummonState multiSummonAttack;
+        private BossLightningStormState lightningStormAttack;
+        private BossSpiralBulletHellState spiralBulletHellAttack;
+        private IState acidFlaskAttack;
+        private IState deployTurretsAttack;
+
+        [Header("Borrowed signature skills")]
+        [SerializeField] private GameObject acidPoolPrefab;
+        [SerializeField] private GameObject turretPrefab;
+        [SerializeField] private int maxTurretsCap = 8;
+        private readonly List<GameObject> activeAcidPools = new List<GameObject>();
+        private readonly List<BossTurret> activeTurrets = new List<BossTurret>();
+
+        // skill rotation (no repeats until every skill was used)
+        private readonly List<IState> skillsUsedThisCycle = new List<IState>();
+        private IState lastSkill;
+        private readonly List<IState> nextSkillHolder = new List<IState>(1);
 
         // Attack Pools
         private readonly List<IState> phase1Attacks = new List<IState>();
@@ -60,6 +80,7 @@ namespace Enemies.Bosses
             ResolveMinionAssets();
 
             base.Awake();
+            SkinLibrary.Apply(gameObject, "overlord");   // hand-drawn sprite
         }
 
         private void ResolveMinionAssets()
@@ -73,6 +94,8 @@ namespace Enemies.Bosses
             if (dasherData == null) dasherData = UnityEditor.AssetDatabase.LoadAssetAtPath<EnemyData>("Assets/Data/Enemies/EnemyData_Dasher.asset");
             if (rangedPrefab == null) rangedPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Enemy_Ranged.prefab");
             if (rangedData == null) rangedData = UnityEditor.AssetDatabase.LoadAssetAtPath<EnemyData>("Assets/Data/Enemies/EnemyData_Ranged.asset");
+            if (acidPoolPrefab == null) acidPoolPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/AcidPool.prefab");
+            if (turretPrefab == null) turretPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Boss_Turret.prefab");
 #endif
         }
 
@@ -107,14 +130,24 @@ namespace Enemies.Bosses
             };
             multiSummonAttack = new BossMultiSummonState(this, stateMachine, telegraphIndicator, repositionState, squad, 8);
 
-            // Phase 1: Charge + Slam + FanShot + RapidBarrage
+            // signature skills borrowed from the other bosses (stronger versions)
+            lightningStormAttack = new BossLightningStormState(this, stateMachine, telegraphIndicator, repositionState);      // Stormcaller
+            spiralBulletHellAttack = new BossSpiralBulletHellState(this, stateMachine, telegraphIndicator, repositionState);  // Stormcaller
+            acidFlaskAttack = new OverlordSkillState(this, stateMachine, telegraphIndicator, repositionState, true, 3.2f, 0.8f, 1.0f, ThrowAcidFlasks);   // Doctor
+            deployTurretsAttack = new OverlordSkillState(this, stateMachine, telegraphIndicator, repositionState, false, 2.8f, 0.7f, 1.0f, DeployTurrets);  // Architect
+
+            // Phase 1 pool: Charge + Slam + Nova + Barrage + Acid + Turrets + Lightning + Spiral
             phase1Attacks.Clear();
             phase1Attacks.Add(chargeAttack);
             phase1Attacks.Add(slamAttack);
             phase1Attacks.Add(radialBurstAttack);
             phase1Attacks.Add(rapidBarrageAttack);
+            phase1Attacks.Add(acidFlaskAttack);
+            phase1Attacks.Add(deployTurretsAttack);
+            phase1Attacks.Add(lightningStormAttack);
+            phase1Attacks.Add(spiralBulletHellAttack);
 
-            // Phase 2 & 3: Charge + Slam + RadialBurst (360 in Phase 3) + BurrowEmerge + RapidBarrage + MultiSummon
+            // Phase 2 & 3 pool: everything above + BurrowEmerge + MultiSummon
             phase2Attacks.Clear();
             phase2Attacks.Add(chargeAttack);
             phase2Attacks.Add(slamAttack);
@@ -122,6 +155,10 @@ namespace Enemies.Bosses
             phase2Attacks.Add(burrowEmergeAttack);
             phase2Attacks.Add(rapidBarrageAttack);
             phase2Attacks.Add(multiSummonAttack);
+            phase2Attacks.Add(acidFlaskAttack);
+            phase2Attacks.Add(deployTurretsAttack);
+            phase2Attacks.Add(lightningStormAttack);
+            phase2Attacks.Add(spiralBulletHellAttack);
 
             // Transitions & Death
             phaseTransitionState = new BossPhaseTransitionState(this, stateMachine, repositionState, transitionTime);
@@ -132,14 +169,184 @@ namespace Enemies.Bosses
             introState = new BossIntroState(this, stateMachine, repositionState, introTime);
         }
 
+        /// <summary>
+        /// Returns ONE skill (the pick state then simply runs it). A skill is never chosen again until every skill of the
+        /// current phase pool has been used once; then the cycle starts over (the first skill of a new cycle is never the last one used).
+        /// </summary>
         public override List<IState> GetCurrentPhaseAttacks()
         {
-            if (CurrentPhase >= 2)
+            List<IState> pool = CurrentPhase >= 2 ? phase2Attacks : phase1Attacks;
+            nextSkillHolder.Clear();
+            if (pool.Count == 0) return nextSkillHolder;
+
+            List<IState> candidates = new List<IState>();
+            for (int i = 0; i < pool.Count; i++)
             {
-                return phase2Attacks;
+                if (!skillsUsedThisCycle.Contains(pool[i])) candidates.Add(pool[i]);
+            }
+            if (candidates.Count == 0)
+            {
+                skillsUsedThisCycle.Clear();   // every skill was used: start a new cycle
+                for (int i = 0; i < pool.Count; i++)
+                {
+                    if (pool.Count == 1 || pool[i] != lastSkill) candidates.Add(pool[i]);
+                }
             }
 
-            return phase1Attacks;
+            IState chosen = candidates[Random.Range(0, candidates.Count)];
+            skillsUsedThisCycle.Add(chosen);
+            lastSkill = chosen;
+            nextSkillHolder.Add(chosen);
+            return nextSkillHolder;
+        }
+
+        // ------------------------------------------------------------------ Doctor's acid flasks (more, bigger, longer-lasting)
+        private void ThrowAcidFlasks()
+        {
+            if (acidPoolPrefab == null) return;
+            activeAcidPools.RemoveAll(x => x == null);
+
+            int count = 5 + Mathf.Clamp(CurrentPhase, 1, 3);   // 6 / 7 / 8 pools
+            Vector3 centre = Target != null ? Target.position : transform.position;
+            for (int i = 0; i < count; i++)
+            {
+                Vector3 pos = centre;
+                if (i > 0)
+                {
+                    Vector2 off = Random.insideUnitCircle * Random.Range(1.5f, 5.5f);
+                    pos += new Vector3(off.x, off.y, 0f);
+                }
+                GameObject poolObj = Instantiate(acidPoolPrefab, pos, Quaternion.identity);
+                activeAcidPools.Add(poolObj);
+                AcidPool pool = poolObj.GetComponent<AcidPool>();
+                if (pool != null) pool.Setup(10f * DifficultyMultiplier, 7.0f, 2.4f);
+            }
+        }
+
+        // ------------------------------------------------------------------ Architect's turrets (more, overclocked from phase 2)
+        private void DeployTurrets()
+        {
+            if (turretPrefab == null) return;
+            activeTurrets.RemoveAll(x => x == null);
+
+            int count = 3 + Mathf.Clamp(CurrentPhase, 1, 3);   // 4 / 5 / 6 turrets per cast
+            int toSpawn = Mathf.Min(count, Mathf.Max(0, maxTurretsCap - activeTurrets.Count));
+            float baseAngle = Random.Range(0f, 360f);
+            for (int i = 0; i < toSpawn; i++)
+            {
+                float angle = (baseAngle + i * (360f / Mathf.Max(1, toSpawn))) * Mathf.Deg2Rad;
+                Vector3 pos = transform.position + new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * 3.4f;
+                GameObject obj = Instantiate(turretPrefab, pos, Quaternion.identity);
+                BossTurret turret = obj.GetComponent<BossTurret>();
+                if (turret == null) continue;
+                GameObject projPrefab = bossConfig != null ? bossConfig.ProjectilePrefab : null;
+                turret.Setup(projPrefab, 14f * DifficultyMultiplier, 7.5f);
+                if (CurrentPhase >= 2) turret.SetOverclock(true);
+                turret.OnTurretDestroyed += HandleTurretDestroyed;
+                activeTurrets.Add(turret);
+            }
+        }
+
+        private void HandleTurretDestroyed(BossTurret turret)
+        {
+            activeTurrets.Remove(turret);
+        }
+
+        public override void AdvancePhase()
+        {
+            base.AdvancePhase();
+            for (int i = 0; i < activeTurrets.Count; i++)
+            {
+                if (activeTurrets[i] != null) activeTurrets[i].SetOverclock(true);
+            }
+        }
+
+        public override void NotifyBossDefeated()
+        {
+            for (int i = activeTurrets.Count - 1; i >= 0; i--)
+            {
+                if (activeTurrets[i] != null) activeTurrets[i].DestroyTurret();
+            }
+            activeTurrets.Clear();
+            for (int i = 0; i < activeAcidPools.Count; i++)
+            {
+                if (activeAcidPools[i] != null) Destroy(activeAcidPools[i]);
+            }
+            activeAcidPools.Clear();
+            base.NotifyBossDefeated();
+        }
+
+        /// <summary>A simple signature move: telegraph circle, then fire an action, then recover.</summary>
+        private class OverlordSkillState : EnemyState
+        {
+            private enum Step { Telegraph, Recover }
+
+            private readonly OverlordBoss boss;
+            private readonly TelegraphIndicator indicator;
+            private readonly IState nextState;
+            private readonly bool atTarget;
+            private readonly float radius, telegraphTime, recoverTime;
+            private readonly System.Action fire;
+
+            private Step step;
+            private float stepStart;
+
+            public OverlordSkillState(OverlordBoss boss, StateMachine stateMachine, TelegraphIndicator indicator, IState nextState,
+                                      bool atTarget, float radius, float telegraphTime, float recoverTime, System.Action fire)
+                : base(boss, stateMachine)
+            {
+                this.boss = boss;
+                this.indicator = indicator;
+                this.nextState = nextState;
+                this.atTarget = atTarget;
+                this.radius = radius;
+                this.telegraphTime = telegraphTime;
+                this.recoverTime = recoverTime;
+                this.fire = fire;
+            }
+
+            public override void Enter()
+            {
+                base.Enter();
+                boss.StopMovement();
+                step = Step.Telegraph;
+                stepStart = Time.time;
+
+                Vector3 pos = atTarget && boss.Target != null ? boss.Target.position : boss.transform.position;
+                if (indicator != null) indicator.ShowCircle(pos, radius, 28, 0.25f);
+                if (data != null && data.TelegraphSFX != null && AudioManager.Instance != null) AudioManager.Instance.PlaySFX(data.TelegraphSFX);
+                if (boss.Animator != null) boss.Animator.SetTrigger("Telegraph");
+            }
+
+            public override void Tick()
+            {
+                base.Tick();
+                float elapsed = Time.time - stepStart;
+
+                if (step == Step.Telegraph)
+                {
+                    if (elapsed >= telegraphTime)
+                    {
+                        if (indicator != null) indicator.Hide();
+                        if (fire != null) fire();
+                        if (boss.Animator != null) boss.Animator.SetTrigger("Attack");
+                        if (data != null && data.AttackSFX != null && AudioManager.Instance != null) AudioManager.Instance.PlaySFX(data.AttackSFX);
+                        step = Step.Recover;
+                        stepStart = Time.time;
+                    }
+                }
+                else if (elapsed >= recoverTime * boss.RecoverDurationMultiplier)
+                {
+                    stateMachine.ChangeState(nextState);
+                }
+            }
+
+            public override void Exit()
+            {
+                base.Exit();
+                if (indicator != null) indicator.Hide();
+                boss.StopMovement();
+            }
         }
 
         /// <summary>

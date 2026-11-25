@@ -80,6 +80,12 @@ public class EnemyAI : MonoBehaviour, IDamageable
         moveSpeed = 2.8f;
         hasCachedBaseStats = false;
         CacheBaseStatsIfNeeded();
+
+        Time.timeScale = 1f;
+        if (UI.BossHealthBarUI.Instance != null)
+        {
+            UI.BossHealthBarUI.Instance.ShowBossBar("BOSS ENCOUNTER", maxHealth);
+        }
     }
 
     private void Awake()
@@ -98,6 +104,15 @@ public class EnemyAI : MonoBehaviour, IDamageable
         }
         FindPlayer();
         GetNewPatrolPoint();
+
+        if (isBoss)
+        {
+            Time.timeScale = 1f;
+            if (UI.BossHealthBarUI.Instance != null)
+            {
+                UI.BossHealthBarUI.Instance.ShowBossBar("BOSS ENCOUNTER", maxHealth);
+            }
+        }
     }
 
     private void FindPlayer()
@@ -378,8 +393,14 @@ public class EnemyAI : MonoBehaviour, IDamageable
         if (currentHealth <= 0f || amount <= 0f) return;
         float finalAmount = amount * DamageTakenMultiplier;
         currentHealth -= finalAmount;
+
+        if (isBoss && UI.BossHealthBarUI.Instance != null)
+        {
+            UI.BossHealthBarUI.Instance.UpdateBossHealth(currentHealth);
+        }
+
         if (AudioManager.Instance != null)
-            AudioManager.Instance.PlaySFX(AudioManager.Instance.hitSFX);
+            AudioManager.Instance.PlayEnemyHitSFX(isBoss ? 0.6f : 1f);
 
         if (currentHealth <= 0)
         {
@@ -394,6 +415,10 @@ public class EnemyAI : MonoBehaviour, IDamageable
 
     private void Die()
     {
+        if (isBoss && UI.BossHealthBarUI.Instance != null)
+        {
+            UI.BossHealthBarUI.Instance.HideBossBar();
+        }
         bool wasPoisonedBeforeDeath = poisonRemainingTime > 0f || poisonDps > 0f;
         poisonRemainingTime = 0f;
         poisonDps = 0f;

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using UI;
 using UnityEngine;
 
 namespace Enemies.Core
@@ -241,6 +242,7 @@ namespace Enemies.Core
 
             OnHealthChanged?.Invoke(currentHealth, maxHealth);
             OnEnemyDamaged?.Invoke(data, finalAmount, transform.position);
+            if (enemyBase is Bosses.BossBase || GetComponent<Bosses.BossBase>() != null) BossHealthBarUI.Instance?.UpdateBossHealth(currentHealth);
 
             if (currentHealth <= 0f)
             {
@@ -263,6 +265,7 @@ namespace Enemies.Core
 
             OnHealthChanged?.Invoke(currentHealth, maxHealth);
             OnEnemyDamaged?.Invoke(data, finalAmount, transform.position);
+            if (enemyBase is Bosses.BossBase || GetComponent<Bosses.BossBase>() != null) BossHealthBarUI.Instance?.UpdateBossHealth(currentHealth);
 
             // Apply Hurt Flash
             TriggerHurtFlash();
@@ -279,10 +282,11 @@ namespace Enemies.Core
                 rb.AddForce(effectiveKnockback, ForceMode2D.Impulse);
             }
 
-            // Play Hit SFX
-            if (data != null && data.HitSFX != null && AudioManager.Instance != null)
+            // Play Hit SFX (ตัวที่ตายจะเล่นเสียงตายแทน ไม่ซ้อนเสียงโดนตี)
+            if (currentHealth > 0f && AudioManager.Instance != null)
             {
-                AudioManager.Instance.PlaySFX(data.HitSFX);
+                if (data != null && data.HitSFX != null) AudioManager.Instance.PlaySFX(data.HitSFX);
+                else AudioManager.Instance.PlayEnemyHitSFX();
             }
 
             if (currentHealth <= 0f)
@@ -323,6 +327,7 @@ namespace Enemies.Core
             ClearStatusEffects();
 
             Debug.Log($"[{gameObject.name}] Enemy died! (HP reached 0)");
+            if (enemyBase is Bosses.BossBase || GetComponent<Bosses.BossBase>() != null) BossHealthBarUI.Instance?.HideBossBar();
 
             // แจ้งเตือนระบบ Epidemic Outbreak Resonance หากมอนสเตอร์ติดพิษตาย
             OnAnyEnemyDiedWithPoisonState?.Invoke(gameObject, transform.position, wasPoisonedBeforeDeath);
@@ -333,11 +338,8 @@ namespace Enemies.Core
                 Instantiate(data.DeathVFX, transform.position, Quaternion.identity);
             }
 
-            // Play Die SFX
-            if (data != null && data.DieSFX != null && AudioManager.Instance != null)
-            {
-                AudioManager.Instance.PlaySFX(data.DieSFX);
-            }
+            // Play death SFX
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayMonsterDeadSFX();
 
             // 1. Spawn EXP Gem (according to ExpDrop) always
             int expValue = customExpDrop >= 0 ? customExpDrop : (data != null ? data.ExpDrop : 5);
@@ -391,6 +393,9 @@ namespace Enemies.Core
 
                 if (creditObj != null)
                 {
+                    // scatter away from the EXP crystal so the two drops don't overlap
+                    Vector2 scatter = UnityEngine.Random.insideUnitCircle.normalized * UnityEngine.Random.Range(0.6f, 1.0f);
+                    creditObj.transform.position = transform.position + (Vector3)scatter;
                     CreditPickup pickup = creditObj.GetComponent<CreditPickup>();
                     if (pickup != null)
                     {

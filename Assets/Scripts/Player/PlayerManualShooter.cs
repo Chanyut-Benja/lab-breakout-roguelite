@@ -35,6 +35,7 @@ public class PlayerManualShooter : MonoBehaviour
     private void Update()
     {
         if (Time.timeScale <= 0f) return;
+        if (AimSettings.CombatPaused) return;   // room cleared: no shooting
 
         PlayerInventory inventory = PlayerInventory.GetOrCreate();
         if (inventory == null) return;
@@ -43,12 +44,8 @@ public class PlayerManualShooter : MonoBehaviour
         var weapons = inventory.Weapons;
         if (weapons == null || weapons.Count == 0) return;
 
+        // the player stays upright and never turns; only the shots follow the aim
         Vector2 aimDir = GetPrimaryAimDirection();
-        if (aimDir.sqrMagnitude > 0.001f)
-        {
-            float angle = Mathf.Atan2(aimDir.y, aimDir.x) * Mathf.Rad2Deg;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
-        }
 
         float cooldownReduction = PlayerStats.Instance != null ? PlayerStats.Instance.CooldownReduction : 0f;
 
@@ -70,6 +67,12 @@ public class PlayerManualShooter : MonoBehaviour
 
     private Vector2 GetPrimaryAimDirection()
     {
+        if (AimSettings.MouseAim)
+        {
+            Vector2 toMouse = AimSettings.MouseWorld(transform.position) - (Vector2)transform.position;
+            if (toMouse.sqrMagnitude > 0.001f) return toMouse.normalized;
+        }
+
         // 1. ค้นหาศัตรูที่อยู่ใกล้ที่สุดในระยะค้นหา
         Transform nearestEnemy = FindNearestEnemy(autoTargetSearchRadius);
         if (nearestEnemy != null)

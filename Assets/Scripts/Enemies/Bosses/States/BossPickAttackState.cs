@@ -16,6 +16,7 @@ namespace Enemies.Bosses.States
         private readonly BossBase boss;
         private readonly List<IState> availableAttacks = new List<IState>();
         private int lastAttackIndex = -1;
+        private IState lastAttackState;
 
         public BossPickAttackState(BossBase boss, StateMachine stateMachine)
             : base(boss, stateMachine)
@@ -55,6 +56,7 @@ namespace Enemies.Bosses.States
             lastAttackIndex = chosenIndex;
 
             IState nextAttack = currentPhaseAttacks[chosenIndex];
+            lastAttackState = nextAttack;
             stateMachine.ChangeState(nextAttack);
         }
 
@@ -69,7 +71,7 @@ namespace Enemies.Bosses.States
             {
                 pickedIndex = Random.Range(0, attacks.Count);
                 tries++;
-            } while (pickedIndex == lastAttackIndex && tries < 20);
+            } while ((pickedIndex == lastAttackIndex || attacks[pickedIndex] == lastAttackState) && tries < 30);
 
             return pickedIndex;
         }

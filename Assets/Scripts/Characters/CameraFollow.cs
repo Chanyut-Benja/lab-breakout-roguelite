@@ -16,6 +16,8 @@ public class CameraFollow : MonoBehaviour
     private void Awake()
     {
         followCamera = GetComponent<Camera>();
+        // closer to the player: zoom the view in by ~22 %
+        if (Application.isPlaying && followCamera.orthographic) followCamera.orthographicSize *= 0.78f;
     }
 
     private void LateUpdate()

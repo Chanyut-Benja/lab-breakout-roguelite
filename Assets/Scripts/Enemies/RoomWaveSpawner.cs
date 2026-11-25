@@ -94,6 +94,7 @@ namespace Enemies
 
         private void Awake()
         {
+            totalRoomDuration = RoomManager.RoomSeconds;
             if (Instance == null)
             {
                 Instance = this;
@@ -162,20 +163,50 @@ namespace Enemies
             // 90s completion check
             if (currentElapsedTime >= totalRoomDuration)
             {
+                // Boss rooms have no time limit: the room only ends when the boss dies (so the Evolution Core is always given).
+                if (RoomManager.Instance != null && (RoomManager.Instance.IsBossFight || RoomManager.Instance.IsBossRoom))
+                {
+                    currentElapsedTime = totalRoomDuration * 0.8f;   // stay in the final swarm phase, minions keep coming
+                    return;
+                }
                 HandleRoomCompleted();
             }
         }
 
+        // Phase timings are written for a 90 s room; they are scaled to the real room length.
+        private float TimeScale { get { return 90f / Mathf.Max(1f, totalRoomDuration); } }
+
         public WavePhase EvaluatePhase(float time)
         {
+            time *= TimeScale;
             if (time < 20f) return WavePhase.Phase1_Light;      // 0:00 - 0:20 (Phase 1)
             if (time < 70f) return WavePhase.Phase2_Dense;      // 0:20 - 1:10 (Phase 2)
             if (time < 90f) return WavePhase.Phase3_FinalSwarm; // 1:10 - 1:30 (Phase 3)
             return WavePhase.Completed;                         // 90s+: Complete
         }
 
+        private static bool NeedsReal(GameObject g) { return g == null || g.name.EndsWith("_Fallback"); }
+
+        /// <summary>Use the scene's real enemy prefabs (Walker/Runner/Ranged/Dasher) instead of the plain fallback blobs.</summary>
+        private void UseSceneEnemyPrefabs()
+        {
+            EnemySpawner es = EnemySpawner.Instance;
+            if (es == null) return;
+            GameObject walker = es.FindEnemyPrefab("Walker");
+            GameObject runner = es.FindEnemyPrefab("Runner");
+            GameObject ranged = es.FindEnemyPrefab("Ranged");
+            GameObject dasher = es.FindEnemyPrefab("Dasher");
+            if (walker != null && NeedsReal(scrapDronePrefab)) scrapDronePrefab = walker;
+            if (runner != null && NeedsReal(mutantCrawlerPrefab)) mutantCrawlerPrefab = runner;
+            if (ranged != null && NeedsReal(sentinelBotPrefab)) sentinelBotPrefab = ranged;
+            if (walker != null && NeedsReal(armoredGuardPrefab)) armoredGuardPrefab = walker;
+            if (dasher != null && NeedsReal(kamikazeDronePrefab)) kamikazeDronePrefab = dasher;
+        }
+
         public void StartSpawning()
         {
+            CacheArenaBounds();   // the room map may have changed size/position
+            UseSceneEnemyPrefabs();
             isSpawning = true;
             currentElapsedTime = 0f;
             currentPhase = WavePhase.Phase1_Light;
@@ -226,28 +257,50 @@ namespace Enemies
         /// - 0:20 - 1:10: (ศัตรูรวม * 55%) / 50s
         /// - 1:10 - 1:30: (ศัตรูรวม * 30%) / 20s
         /// </summary>
+        // Our tuned balance: swarm density grows 2.8x (room 1) -> 7x (room 18) of the GDD rate, x0.85.
+        private static float SwarmDensity(int room)
+        {
+            float t = Mathf.Clamp01((room - 1) / 17f);
+            return Mathf.Lerp(1.0f, 1.8f, t);   // density multiplier (tune here): room 1 = ~110 spawns per room, room 18 = ~460
+        }
+
+        /// <summary>How many enemies the player is expected to kill in a room (sizes the EXP per kill).</summary>
+        public float ExpectedKills(int room)
+        {
+            return Mathf.Max(30f, GetTotalEnemiesForRoom(room) * SwarmDensity(room) * 0.65f);
+        }
+
         public float GetCurrentSpawnRate()
         {
             int currentRoom = RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 1;
-            float totalEnemies = GetTotalEnemiesForRoom(currentRoom);
+            float totalEnemies = GetTotalEnemiesForRoom(currentRoom) * SwarmDensity(currentRoom) * EnemyScaling.GetPowerSpawnMultiplier();
 
-            if (currentElapsedTime < 20f)
+            float st = currentElapsedTime * TimeScale;
+            if (st < 20f)
             {
-                return (totalEnemies * 0.15f) / 20f;
+                return (totalEnemies * 0.22f) / 20f * TimeScale;
             }
-            if (currentElapsedTime < 70f)
+            if (st < 70f)
             {
-                return (totalEnemies * 0.55f) / 50f;
+                return (totalEnemies * 0.50f) / 50f * TimeScale;
             }
-            return (totalEnemies * 0.30f) / 20f;
+            return (totalEnemies * 0.28f) / 20f * TimeScale;
         }
 
         public int GetDynamicEnemyCap()
         {
             int room = RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 1;
-            maxEnemiesAtOnce = EnemyScaling.GetMaxCap(room);
+            float t = Mathf.Clamp01((room - 1) / 17f);
+            float cap = Mathf.Lerp(130f, 460f, Mathf.Pow(t, 0.6f)) * 0.9f;   // normal rooms
+            if (room <= 9 && RoomManager.Instance != null && (RoomManager.Instance.IsBossRoom || RoomManager.Instance.IsBossFight))
+                cap = Mathf.Lerp(12f, 20f, t);   // floor 1 boss rooms: few minions (no weapon evolution yet). Floor 2+ boss rooms use the normal cap
+            if (!(room <= 9 && RoomManager.Instance != null && (RoomManager.Instance.IsBossRoom || RoomManager.Instance.IsBossFight)))
+                cap *= EnemyScaling.GetPowerCapMultiplier();
+            maxEnemiesAtOnce = Mathf.RoundToInt(cap);
             return maxEnemiesAtOnce;
         }
+
+        private float nextDebugLog;
 
         private IEnumerator WaveRoutine()
         {
@@ -256,16 +309,38 @@ namespace Enemies
                 activeEnemies.RemoveAll(e => e == null || !e.activeInHierarchy);
 
                 float currentRate = Mathf.Max(0.1f, GetCurrentSpawnRate());
-                float spawnInterval = 1f / currentRate;
+                // population floor: if the screen is emptier than 35% of the cap, refill quickly
+                float floorShare = currentElapsedTime * TimeScale < 20f ? 0.60f : (currentElapsedTime * TimeScale < 70f ? 0.75f : 0.90f);
+                if (activeEnemies.Count < GetDynamicEnemyCap() * floorShare)
+                {
+                    int rm = RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 1;
+                    currentRate = Mathf.Max(currentRate, Mathf.Lerp(5f, 12f, Mathf.Clamp01((rm - 1) / 17f)));
+                }
+                int roomNo = RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 1;
+                int packMax = Mathf.Max(2, Mathf.RoundToInt(Mathf.Lerp(3f, 5f, Mathf.Clamp01((roomNo - 1) / 17f))));
+                int pack = UnityEngine.Random.Range(2, packMax + 1);
+                if (roomNo <= 9 && RoomManager.Instance != null && (RoomManager.Instance.IsBossRoom || RoomManager.Instance.IsBossFight)) { packMax = 2; pack = 2; currentRate = Mathf.Min(currentRate, 1.2f); }
+                float spawnInterval = pack / currentRate;   // a pack of 'pack' enemies per event keeps the same average rate
                 int currentCap = GetDynamicEnemyCap();
 
-                // หากศัตรูบนจอ >= MaxCap ให้ข้ามการเสกทันที (ไม่สะสมคิว)
-                if (activeEnemies.Count < currentCap)
+                if (Time.time >= nextDebugLog)
                 {
-                    GameObject chosenPrefab = PickEnemyPrefabForRoom();
-                    if (chosenPrefab != null)
+                    nextDebugLog = Time.time + 3f;
+                    Debug.Log($"[RoomWaveSpawner] t={currentElapsedTime:F1}s active={activeEnemies.Count} cap={currentCap} rate={currentRate:F1}/s pack={pack} player={(player != null)} scrapPrefab={(scrapDronePrefab != null)} timeScale={Time.timeScale}");
+                }
+
+                // หากศัตรูบนจอ >= MaxCap ให้ข้ามการเสกทันที (ไม่สะสมคิว)
+                if (activeEnemies.Count + pack <= currentCap)
+                {
+                    GameObject leader = null;
+                    for (int k = 0; k < pack; k++)
                     {
-                        SpawnEnemy(chosenPrefab);
+                        GameObject chosenPrefab = PickEnemyPrefabForRoom();
+                        if (chosenPrefab == null) continue;
+                        GameObject e = SpawnEnemy(chosenPrefab);
+                        if (e == null) continue;
+                        if (leader == null) leader = e;
+                        else e.transform.position = leader.transform.position + (Vector3)(UnityEngine.Random.insideUnitCircle * 1.6f);
                     }
                 }
 
@@ -288,7 +363,7 @@ namespace Enemies
 
             float scrapWeight = 40f;
             float crawlerWeight = 25f;
-            float sentinelWeight = room >= 2 ? 15f : 0f;
+            float sentinelWeight = room >= 2 ? 8f : 0f;
             float guardWeight = room >= 4 ? 10f : 0f;
             float kamikazeWeight = room >= 5 ? 10f : 0f;
 
@@ -333,9 +408,12 @@ namespace Enemies
         /// - ห้อง 10, 11, 13, 14, 16, 17: Siege Walker (HP 1,500, Drop EXP 20)
         /// นับรวมในเพดานศัตรู
         /// </summary>
+        private static readonly bool MiniBossesEnabled = false;
+
         private void CheckMiniBossSpawn()
         {
-            if (hasSpawnedMiniBossThisRoom || currentElapsedTime < 60f) return;
+            if (!MiniBossesEnabled) return;   // mini-bosses removed from the game
+            if (hasSpawnedMiniBossThisRoom || currentElapsedTime * TimeScale < 60f) return;
 
             int room = RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 1;
             bool isFloor1MiniBossRoom = (room == 2 || room == 4 || room == 5 || room == 7 || room == 8);
@@ -374,6 +452,11 @@ namespace Enemies
             int room = RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 1;
             EnemyScaling.ApplyScaling(enemyObj, room, player);
 
+            // pick the art by role (several roles share the same prefab)
+            if (prefabToSpawn == armoredGuardPrefab) SkinLibrary.Apply(enemyObj, "wheelbot");
+            else if (prefabToSpawn == scrapDronePrefab) SkinLibrary.Apply(enemyObj, UnityEngine.Random.value < 0.35f ? "blob" : "zombie");
+            else if (prefabToSpawn == mutantCrawlerPrefab) SkinLibrary.Apply(enemyObj, UnityEngine.Random.value < 0.30f ? "ghost" : "dog");
+
             activeEnemies.Add(enemyObj);
             return enemyObj;
         }
@@ -393,6 +476,7 @@ namespace Enemies
             }
 
             GameObject newObj = Instantiate(prefab, position, Quaternion.identity);
+            if (!newObj.activeSelf) newObj.SetActive(true);   // fallback templates are inactive; clones must be switched on
             EnemyBase enemyBase = newObj.GetComponent<EnemyBase>();
             if (enemyBase != null)
             {
@@ -412,17 +496,27 @@ namespace Enemies
 
         private Vector3 GetRandomSpawnPositionNearPlayer()
         {
-            float radius = UnityEngine.Random.Range(minSpawnRadius, maxSpawnRadius);
-            Vector2 randomDir = UnityEngine.Random.insideUnitCircle.normalized;
-            if (randomDir == Vector2.zero) randomDir = Vector2.right;
-
-            Vector3 pos = player.position + new Vector3(randomDir.x * radius, randomDir.y * radius, 0f);
-            if (hasArenaBounds)
+            // try several directions; keep the first one that stays far from the player after clamping to the arena
+            Vector3 best = player.position;
+            float bestDist = -1f;
+            for (int attempt = 0; attempt < 10; attempt++)
             {
-                pos.x = Mathf.Clamp(pos.x, arenaBounds.min.x + 2f, arenaBounds.max.x - 2f);
-                pos.y = Mathf.Clamp(pos.y, arenaBounds.min.y + 2f, arenaBounds.max.y - 2f);
+                float radius = UnityEngine.Random.Range(minSpawnRadius, maxSpawnRadius);
+                Vector2 randomDir = UnityEngine.Random.insideUnitCircle.normalized;
+                if (randomDir == Vector2.zero) randomDir = Vector2.right;
+
+                Vector3 pos = player.position + new Vector3(randomDir.x * radius, randomDir.y * radius, 0f);
+                if (hasArenaBounds)
+                {
+                    pos.x = Mathf.Clamp(pos.x, arenaBounds.min.x + 2f, arenaBounds.max.x - 2f);
+                    pos.y = Mathf.Clamp(pos.y, arenaBounds.min.y + 2f, arenaBounds.max.y - 2f);
+                }
+
+                float d = Vector2.Distance(pos, player.position);
+                if (d >= minSpawnRadius * 0.85f) return pos;   // far enough: use it
+                if (d > bestDist) { bestDist = d; best = pos; }
             }
-            return pos;
+            return best;   // arena too small to be far away: use the farthest candidate found
         }
 
         private void RepositionOutOfRangeEnemies()
@@ -531,6 +625,13 @@ namespace Enemies
 
         private void CacheArenaBounds()
         {
+            if (RoomEnvironment.Instance != null)
+            {
+                arenaBounds = RoomEnvironment.Instance.ArenaBounds;
+                hasArenaBounds = true;
+                return;
+            }
+            hasArenaBounds = false;
             GameObject map = GameObject.Find("MapBoundaries");
             if (map != null)
             {
@@ -576,12 +677,14 @@ namespace Enemies
 
             if (breachWardenPrefab == null)
             {
-                breachWardenPrefab = CreateFallbackPrefab<BreachWardenEnemy>("BreachWarden_Fallback", new Color(0.95f, 0.25f, 0.25f, 1f), 1500f, 20);
+                breachWardenPrefab = Resources.Load<GameObject>("Prefabs/Enemy_BreachWarden");
+                if (breachWardenPrefab == null) breachWardenPrefab = CreateFallbackPrefab<BreachWardenEnemy>("BreachWarden_Fallback", new Color(0.95f, 0.25f, 0.25f, 1f), 1500f, 20);
             }
 
             if (siegeWalkerPrefab == null)
             {
-                siegeWalkerPrefab = CreateFallbackPrefab<SiegeWalkerEnemy>("SiegeWalker_Fallback", new Color(0.85f, 0.35f, 0.20f, 1f), 1500f, 20);
+                siegeWalkerPrefab = Resources.Load<GameObject>("Prefabs/Enemy_SiegeWalker");
+                if (siegeWalkerPrefab == null) siegeWalkerPrefab = CreateFallbackPrefab<SiegeWalkerEnemy>("SiegeWalker_Fallback", new Color(0.85f, 0.35f, 0.20f, 1f), 1500f, 20);
             }
         }
 

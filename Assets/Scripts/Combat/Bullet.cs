@@ -45,6 +45,10 @@ public class Bullet : MonoBehaviour
             SpriteRenderer renderer = GetComponent<SpriteRenderer>();
             if (renderer != null) renderer.color = customColor.Value;
         }
+        {
+            SpriteRenderer fxSr = GetComponent<SpriteRenderer>();
+            ProjectileFx.Decorate(gameObject, fxSr != null ? fxSr.color : Color.white, 2.4f, 0.18f, 0.16f, true);
+        }
 
         // หมุนตัวกระสุนให้หันหน้าไปตามทิศทางการบิน
         float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;

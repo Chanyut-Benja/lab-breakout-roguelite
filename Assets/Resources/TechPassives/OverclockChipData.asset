@@ -16,6 +16,6 @@ MonoBehaviour:
   techName: Overclock Chip
   description: Reduces weapon cooldowns (Cooldown Reduction).
   matchingWeapon: 2
-  icon: {fileID: 21300000, guid: e75a82d68e6328048a2de432ba16b2bf, type: 3}
+  icon: {fileID: 21300000, guid: a461919166476ad489f314981de17e0d, type: 3}
   primaryBonusPerLevel: 0.08
   secondaryBonusPerLevel: 0.0

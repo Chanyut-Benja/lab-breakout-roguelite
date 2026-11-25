@@ -78,6 +78,25 @@ public class LevelUpUI : MonoBehaviour
         EnsureRerollButtonExists();
     }
 
+#if UNITY_EDITOR
+    /// <summary>Editor only: creates the reroll + banish buttons as real scene objects (used by Tools > Bake Game UI).</summary>
+    public void BakeInEditor()
+    {
+        ResolveReferences();
+        if (cardButtons != null)
+        {
+            for (int i = 0; i < cardButtons.Length; i++)
+            {
+                if (cardButtons[i] == null) continue;
+                LevelUpCardUI card = cardButtons[i].GetComponent<LevelUpCardUI>();
+                if (card == null) card = cardButtons[i].gameObject.AddComponent<LevelUpCardUI>();
+                card.EnsureReferences();
+            }
+        }
+        UnityEditor.EditorUtility.SetDirty(this);
+    }
+#endif
+
     private void EnsureRerollButtonExists()
     {
         if (rerollButton == null)
@@ -284,6 +303,30 @@ public class LevelUpUI : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// สุ่มการ์ดอัปเกรดเลเวลอัปตามข้อกำหนด Balance Sheet หัวข้อ 7:
+    /// - ห้ามมี Boon ปรากฏในหน้าต่าง Level Up (Boons รับได้จากประตูกับร้านค้าเท่านั้น)
+    /// - ขีดจำกัดกระเป๋า: Weapons ไม่เกิน 3 ชิ้น, Techs ไม่เกิน 3 ชิ้น (แต่ละชิ้นอัปได้ถึง Lv.5)
+    /// - หากประเภทใดเต็ม 3 ชิ้นแล้ว: ห้ามเสนอชิ้นใหม่ประเภทนั้น ให้เสนอเฉพาะการ์ดอัปเกรดชิ้นเดิมที่ยังไม่ถึง Lv.5
+    /// - กฎน้ำหนักการสุ่ม: ของที่ถืออยู่ในตัวแล้ว Weight = 3, ของใหม่ Weight = 1
+    /// - ระบบการันตีการ์ดคู่ Evolve: หากมีอาวุธเลเวล >= 3 จองการ์ด 1 ใน 3 ใบเสมอสำหรับชิ้นส่วนที่ยังขาด
+    /// </summary>
+    public List<LevelUpUpgradeData> GetRandomUpgrades(int count = 3)
+    {
+        if (UpgradeManager.Instance != null)
+        {
+            return UpgradeManager.Instance.GetRandomUpgrades(count);
+        }
+
+        PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        if (inv != null)
+        {
+            return inv.GenerateWeightedLevelUpCards(count);
+        }
+
+        return new List<LevelUpUpgradeData>();
+    }
+
     public void RerollChoices()
     {
         if (LevelUpManager.Instance != null)
@@ -298,7 +341,10 @@ public class LevelUpUI : MonoBehaviour
                 List<LevelUpUpgradeData> newCards = inv.GenerateWeightedLevelUpCards(3);
                 for (int i = 0; i < newCards.Count && i < cardButtons.Length; i++)
                 {
-                    BindCardButton(i, newCards[i], null);
+                    if (newCards[i] != null && newCards[i].category != UpgradeCategory.Boon)
+                    {
+                        BindCardButton(i, newCards[i], null);
+                    }
                 }
             }
         }

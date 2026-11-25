@@ -14,9 +14,9 @@ using UnityEngine.SceneManagement;
 public class CharacterSelectUI : MonoBehaviour
 {
     // Character Accent Colors
-    public static readonly Color VanguardGreen = new Color(0f, 0.9f, 0.46f, 1f);     // #00E676 (Green)
-    public static readonly Color PsionicRed = new Color(1f, 0.2f, 0.4f, 1f);          // #FF3366 (Red/Crimson)
-    public static readonly Color CyberSwiftAmber = new Color(1f, 0.7f, 0f, 1f);       // #FFB300 (Amber/Orange-Yellow)
+    public static readonly Color VanguardGreen = new Color(1f, 0.24f, 0.28f, 1f);      // N-01 Vanguard = RED (ชื่อตัวแปรเดิม)
+    public static readonly Color PsionicRed = new Color(0.18f, 0.92f, 0.42f, 1f);       // N-02 Psionic = GREEN (ชื่อตัวแปรเดิม)
+    public static readonly Color CyberSwiftAmber = new Color(0.25f, 0.56f, 1f, 1f);     // N-03 Cyber-Swift = BLUE (ชื่อตัวแปรเดิม)
     public static readonly Color CardBgDark = new Color(0.06f, 0.08f, 0.11f, 1f);    // #10141D
     public static readonly Color BoxContainerBg = new Color(0.08f, 0.11f, 0.16f, 0.95f); // #151D2A
     public static readonly Color NeonCyan = new Color(0f, 0.9f, 1f, 1f);              // #00E5FF
@@ -81,6 +81,9 @@ public class CharacterSelectUI : MonoBehaviour
 
     private void SetupTitleText(Font font)
     {
+        Transform oldLogo = transform.Find("GameLogo");
+        if (oldLogo != null) { if (Application.isPlaying) Destroy(oldLogo.gameObject); else DestroyImmediate(oldLogo.gameObject); }   // the logo now lives on the start page only
+        SkinLibrary.AddBackground(transform, 0.6f);   // cover art behind the cards (dimmed so the text stays readable)
         Transform titleTrans = transform.Find("TitleText (Chracter Select)");
         if (titleTrans == null) titleTrans = transform.Find("TitleText");
 
@@ -123,10 +126,10 @@ public class CharacterSelectUI : MonoBehaviour
             RectTransform bRect = backTrans.GetComponent<RectTransform>();
             if (bRect != null)
             {
-                bRect.anchorMin = new Vector2(0f, 0f);
-                bRect.anchorMax = new Vector2(0f, 0f);
-                bRect.pivot = new Vector2(0f, 0f);
-                bRect.anchoredPosition = new Vector2(60f, 45f); // มุมซ้ายล่าง
+                bRect.anchorMin = new Vector2(1f, 0f);
+                bRect.anchorMax = new Vector2(1f, 0f);
+                bRect.pivot = new Vector2(1f, 0f);
+                bRect.anchoredPosition = new Vector2(-60f, 45f); // bottom-right
                 bRect.sizeDelta = new Vector2(200f, 60f);       // ขยายใหญ่ขึ้นตามสัดส่วน
             }
 
@@ -303,7 +306,7 @@ public class CharacterSelectUI : MonoBehaviour
             200,
             15,
             4.0f,
-            "Kinetic Feedback",
+            "Kinetic Absorption",
             "Reflects melee damage & high durability.",
             "Standard Dash",
             "1 Dash Charge",
@@ -412,7 +415,7 @@ public class CharacterSelectUI : MonoBehaviour
 
         Image innerImg = innerBgTrans.GetComponent<Image>();
         innerImg.sprite = null;
-        innerImg.color = CardBgDark;
+        innerImg.color = Color.Lerp(CardBgDark, accentColor, 0.13f);
         innerImg.raycastTarget = true;
 
         // Smooth Hover Animation (1.05x)
@@ -566,7 +569,7 @@ public class CharacterSelectUI : MonoBehaviour
         wText.font = font;
         wText.fontSize = 20;
         wText.fontStyle = FontStyle.Bold;
-        wText.color = NeonCyan;
+        wText.color = Color.Lerp(accentColor, Color.white, 0.35f);
         wText.alignment = TextAnchor.MiddleCenter;
         wText.raycastTarget = false;
 
@@ -606,7 +609,7 @@ public class CharacterSelectUI : MonoBehaviour
 
         Image sbImg = statsBoxTrans.GetComponent<Image>();
         sbImg.sprite = null;
-        sbImg.color = BoxContainerBg;
+        sbImg.color = Color.Lerp(BoxContainerBg, accentColor, 0.16f);
         sbImg.raycastTarget = false;
 
         Outline sbOutline = statsBoxTrans.GetComponent<Outline>();
@@ -654,7 +657,7 @@ public class CharacterSelectUI : MonoBehaviour
 
         Image pbImg = passiveBoxTrans.GetComponent<Image>();
         pbImg.sprite = null;
-        pbImg.color = BoxContainerBg;
+        pbImg.color = Color.Lerp(BoxContainerBg, accentColor, 0.16f);
         pbImg.raycastTarget = false;
 
         Outline pbOutline = passiveBoxTrans.GetComponent<Outline>();
@@ -676,7 +679,7 @@ public class CharacterSelectUI : MonoBehaviour
         pbtRt.offsetMax = new Vector2(-14f, -6f);
 
         Text pbText = pbTextTrans.GetComponent<Text>();
-        pbText.text = $"<b>Passive: {passiveName}</b>\n<color=#B0BEC5>{passiveDesc}</color>\n<b>Dash: {dashName}</b> (<color=#80DEEA>{dashDesc}</color>)";
+        pbText.text = $"<b>Passive: {passiveName}</b>\n<color=#B0BEC5>{passiveDesc}</color>\n<b>Dash: {dashName}</b> (<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(accentColor, Color.white, 0.55f))}>{dashDesc}</color>)";
         pbText.font = font;
         pbText.fontSize = 18; // Font 18sp
         pbText.color = Color.white;
@@ -802,7 +805,7 @@ public class CharacterSelectUI : MonoBehaviour
         PlayerPrefs.Save();
 
         Debug.Log($"[CharacterSelectUI] Selected and Deploying: {charName} (#{index}) with Starting Weapon: {PlayerInventory.GetWeaponName(weapon)}");
-        SceneManager.LoadScene(MainMenuManager.Instance != null ? MainMenuManager.Instance.GameSceneName : "GameScene");
+        SceneLoader.Load(MainMenuManager.Instance != null ? MainMenuManager.Instance.GameSceneName : "GameScene");
     }
 
     // --- Backward Compatible Helper Methods ---

@@ -16,6 +16,6 @@ MonoBehaviour:
   techName: Bio-Fuel Tank
   description: Increases attack area size of weapons.
   matchingWeapon: 3
-  icon: {fileID: 21300000, guid: f0f4faec828fba64a94a1eefe44acc6c, type: 3}
+  icon: {fileID: 21300000, guid: de649cd7882f6834a85a0577f649d6ea, type: 3}
   primaryBonusPerLevel: 0.1
   secondaryBonusPerLevel: 0.0

@@ -79,7 +79,7 @@ namespace Enemies.States
                 enemy.StopMovement();
 
                 // Check shoot cooldown (2.0s per spec)
-                float cooldown = data != null ? data.AttackCooldown : 2.0f;
+                float cooldown = (data != null ? data.AttackCooldown : 2.0f) * 1.8f;   // fewer enemy shots
                 if (Time.time >= lastShotTime + cooldown)
                 {
                     stateMachine.ChangeState(aimState);

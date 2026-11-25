@@ -38,6 +38,7 @@ namespace Enemies.Bosses
             }
 
             base.Awake();
+            SkinLibrary.Apply(gameObject, "digger");   // hand-drawn sprite
         }
 
         protected override void InitializeStates()

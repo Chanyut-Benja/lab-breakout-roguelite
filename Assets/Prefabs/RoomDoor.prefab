@@ -256,7 +256,7 @@ MonoBehaviour:
   titleText: {fileID: 0}
   worldTextMesh: {fileID: 8120563728080463638}
   interactionPrompt: {fileID: 0}
-  boonSprite: {fileID: 21300000, guid: a1b2c3d4e5f60718293a4b5c6d7e8f90, type: 3}
+  boonSprite: {fileID: 21300000, guid: 1414aeee4fdf4117bca6ae00c8332749, type: 3}
   shopSprite: {fileID: 0}
   researchSprite: {fileID: 0}
   bossSprite: {fileID: 0}

@@ -12,8 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8f353ab0d6cbcfa44b6b0554cb7bef36, type: 3}
   m_Name: TechPassivesData
   m_EditorClassIdentifier: 
-  targetingLensIcon: {fileID: 21300000, guid: 8f596cc7047f16246a1fd54c62515094, type: 3}
-  geneticExtractorIcon: {fileID: 21300000, guid: 2ef0377aeba37a44abf1d5b3fe999a9c, type: 3}
-  overclockChipIcon: {fileID: 21300000, guid: e75a82d68e6328048a2de432ba16b2bf, type: 3}
-  bioFuelTankIcon: {fileID: 21300000, guid: f0f4faec828fba64a94a1eefe44acc6c, type: 3}
-  gravitonCapacitorIcon: {fileID: 21300000, guid: 5df0df505aa71674d92dda90f4c728cf, type: 3}
+  targetingLensIcon: {fileID: 21300000, guid: 55b65af3e8a23d7439ca57fd0b2336c3, type: 3}
+  geneticExtractorIcon: {fileID: 21300000, guid: f29ee9360b1c53c4ea649045f9375568, type: 3}
+  overclockChipIcon: {fileID: 21300000, guid: a461919166476ad489f314981de17e0d, type: 3}
+  bioFuelTankIcon: {fileID: 21300000, guid: de649cd7882f6834a85a0577f649d6ea, type: 3}
+  gravitonCapacitorIcon: {fileID: 21300000, guid: 63081b40166176b4d8ac67588bd1b110, type: 3}

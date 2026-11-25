@@ -41,20 +41,22 @@ public class ExpBarUI : MonoBehaviour
 
     private void UpdateExpDisplay(int currentExp, int maxExp, int currentLevel)
     {
+        bool isMaxLevel = currentLevel >= ExpManager.MAX_LEVEL;
+
         if (expSlider != null)
         {
             expSlider.maxValue = maxExp;
-            expSlider.value = currentExp;
+            expSlider.value = isMaxLevel ? maxExp : currentExp;
         }
 
         if (levelText != null)
         {
-            levelText.text = $"Lv. {currentLevel}";
+            levelText.text = isMaxLevel ? $"Lv. {currentLevel} (MAX)" : $"Lv. {currentLevel}";
         }
 
         if (expValueText != null)
         {
-            expValueText.text = $"{currentExp} / {maxExp}";
+            expValueText.text = isMaxLevel ? "MAX" : $"{currentExp} / {maxExp}";
         }
     }
 }

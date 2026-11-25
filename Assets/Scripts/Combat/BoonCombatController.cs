@@ -41,8 +41,10 @@ public class BoonCombatController : MonoBehaviour
 
     // Standard Boon Timers & Accumulators
     private float barrierRegenTimer = 0f;
-    private float toxicSporeTickTimer = 0f;
     private float flameRingTickTimer = 0f;
+    private const float ThunderstormRadius = 6.0f;   // fits on screen
+    private float flameFxTimer = 0f;
+    private float staticCrackleTimer = 0f;
     private float magneticPulseTimer = 0f;
     private Vector2 lastPlayerPosition;
     private float accumulatedWalkDistance = 0f;
@@ -203,7 +205,7 @@ public class BoonCombatController : MonoBehaviour
             return;
         }
 
-        float maxShield = barrierSlot.level >= 2 ? 50f : 20f;
+        float maxShield = barrierSlot.level >= 2 ? 2f : 1f;   // charges: each blocks one hit (Lv.1 = 1 hit, Lv.2 = 2 hits)
         float regenInterval = barrierSlot.level >= 2 ? 8f : 15f;
 
         if (playerHealth != null)
@@ -244,7 +246,7 @@ public class BoonCombatController : MonoBehaviour
         if (barrierSlot.isResonant)
         {
             bladeShieldPeriodicTimer += dt;
-            if (bladeShieldPeriodicTimer >= 3.0f)
+            if (false && bladeShieldPeriodicTimer >= 3.0f)   // blades now fire only when the barrier breaks
             {
                 bladeShieldPeriodicTimer = 0f;
                 TriggerBladeShieldMatrixBurst();
@@ -260,6 +262,7 @@ public class BoonCombatController : MonoBehaviour
     /// </summary>
     private void HandleShieldDamaged(float absorbedDamage)
     {
+        if (absorbedDamage >= 0f) return;   // blades fire only on break (HandleBarrierBroken)
         PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
         if (inv == null) return;
 
@@ -290,39 +293,17 @@ public class BoonCombatController : MonoBehaviour
 
     private void TriggerBladeShieldMatrixBurst()
     {
-        float areaMult = playerStats != null ? playerStats.AreaSizeMultiplier : 1f;
-        float radius = 7.0f * areaMult; // รัศมี 6-8 เมตร (7m กึ่งกลางสเปก)
-
-        // คำนวณ Critical Strike 100% ตามคุณสมบัติของ Executioner Matrix (มีด)
-        float baseDmg = 130f;
-        float finalPierceCritDamage = playerStats != null
-            ? playerStats.RollCriticalDamage(baseDmg, out _, true)
-            : (baseDmg * 2.0f);
-
-        List<GameObject> enemies = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(transform.position, radius);
-        for (int i = 0; i < enemies.Count; i++)
+        // Barrier broke with Resonance: 8 blade waves (every 45 degrees) fly out and cut through everything
+        float area = playerStats != null ? playerStats.AreaSizeMultiplier : 1f;
+        Vector2 center = transform.position;
+        Color blade = new Color(0.35f, 0.95f, 1f, 0.95f);
+        for (int i = 0; i < 8; i++)
         {
-            GameObject enemy = enemies[i];
-            if (enemy == null || !enemy.activeInHierarchy) continue;
-
-            // Pierce Damage เจาะทะลุศัตรูทั้งหมด พร้อม Guaranteed Critical Strike 100%
-            EvolvedWeaponBehaviors.DealEvolvedDamageToEnemy(enemy, finalPierceCritDamage, true);
-
-            // กระแทกผลักศัตรูออกไปตามแนวรัศมี
-            Vector2 pushDir = ((Vector2)enemy.transform.position - (Vector2)transform.position).normalized;
-            if (pushDir.sqrMagnitude < 0.001f) pushDir = Vector2.right;
-            Vector3 pushedPos = enemy.transform.position + (Vector3)(pushDir * 2.4f);
-
-            Rigidbody2D rb = enemy.GetComponent<Rigidbody2D>();
-            if (rb != null && rb.bodyType != RigidbodyType2D.Static)
-            {
-                rb.position = pushedPos;
-            }
-            enemy.transform.position = pushedPos;
+            float ang = 45f * i * Mathf.Deg2Rad;
+            BladeWave.Spawn(center, new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)), 150f, 1.4f * area, 16f, 0.7f, blade, false);
         }
-
-        // VFX: คลื่นใบมีดพลังงานหมุนวน 360 องศา กระจายออกจากตัวผู้เล่นเป็นวงกลม
-        StartCoroutine(AnimateBladeShieldMatrixRing(radius));
+        WeaponVfx.Shockwave(center, new Color(0.4f, 0.95f, 1f, 0.9f), 8f, 0.4f);
+        WeaponVfx.Burst(center, blade, 18, 8f, 0.4f, 0.18f);
     }
 
     private IEnumerator AnimateBladeShieldMatrixRing(float radius)
@@ -398,79 +379,53 @@ public class BoonCombatController : MonoBehaviour
     // ====================================================================================================
     // สาย 2: Toxic Spore & Epidemic Outbreak (Plague Spore Spreader + Toxic Spore Lv.2)
     // ====================================================================================================
+    // Toxic Spore now works like Holy Water: poison puddles are thrown at random spots on the screen
+    // (preferring spots with enemies), stay for a few seconds and hurt/slow everything standing in them.
+    private float sporeThrowTimer;
+    private readonly List<SporePuddle> sporePuddles = new List<SporePuddle>();
+
     private void UpdateToxicSpore(PlayerInventory inv, float dt)
     {
         BoonSlotEntry sporeSlot = inv.GetBoonSlot(BoonItemType.ToxicSpore);
-        if (sporeSlot == null || sporeSlot.level <= 0)
-        {
-            if (toxicSporeZoneObj != null && toxicSporeZoneObj.activeSelf)
-                toxicSporeZoneObj.SetActive(false);
-            return;
-        }
+        if (toxicSporeZoneObj != null && toxicSporeZoneObj.activeSelf) toxicSporeZoneObj.SetActive(false);   // old aura is gone
+        if (sporeSlot == null || sporeSlot.level <= 0) return;
+        if (AimSettings.CombatPaused) return;
+
+        sporePuddles.RemoveAll(x => x == null);
 
         float areaMult = playerStats != null ? playerStats.AreaSizeMultiplier : 1f;
-        float radius = (sporeSlot.level >= 2 ? 5.0f : 3.0f) * areaMult;
+        bool lv2 = sporeSlot.level >= 2;
+        float interval = lv2 ? 0.9f : 1.6f;
+        float cd = playerStats != null ? Mathf.Clamp(1f - playerStats.CooldownReduction, 0.4f, 1f) : 1f;
 
-        if (toxicSporeZoneObj != null)
+        sporeThrowTimer += dt;
+        if (sporeThrowTimer < interval * cd) return;
+        sporeThrowTimer = 0f;
+
+        // pick a target: a random enemy near the player, otherwise a random spot around the player
+        Vector2 center = transform.position;
+        List<GameObject> near = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(center, 9f);
+        Vector2 pos = center + Random.insideUnitCircle * 6f;
+        if (near.Count > 0)
         {
-            if (!toxicSporeZoneObj.activeSelf) toxicSporeZoneObj.SetActive(true);
-
-            toxicSporeZoneObj.transform.localScale = Vector3.one;
-
-            if (toxicSporeCollider != null && Mathf.Abs(toxicSporeCollider.radius - radius) > 0.05f)
-            {
-                toxicSporeCollider.radius = radius;
-            }
-
-            if (toxicSporeVisualChild != null)
-            {
-                toxicSporeVisualChild.transform.localScale = Vector3.one * (radius * 2f);
-            }
-
-            // ถ้าอยู่ในสถานะ Resonance ปรับสีหมอกสปอร์ให้เข้มข้น เรืองแสงนีออนมรกต
-            if (toxicSporeRenderer != null)
-            {
-                toxicSporeRenderer.color = sporeSlot.isResonant
-                    ? new Color(0.20f, 1.0f, 0.35f, 0.30f)
-                    : new Color(0.25f, 0.95f, 0.3f, 0.18f);
-            }
+            GameObject pick = near[Random.Range(0, near.Count)];
+            if (pick != null) pos = (Vector2)pick.transform.position + Random.insideUnitCircle * 0.8f;
         }
 
-        toxicSporeTickTimer += dt;
-        if (toxicSporeTickTimer >= 0.5f)
+        float radius = (lv2 ? 2.4f : 1.8f) * areaMult;
+        float dps = lv2 ? 30f : 15f;
+        float dotMult = playerStats != null ? playerStats.DoTDamageMultiplier : 1f;
+        SporePuddle puddle = SporePuddle.Create(pos, radius, 3.2f, dps * dotMult, lv2, sporeSlot.isResonant);
+        sporePuddles.Add(puddle);
+    }
+
+    private bool IsInsideSporePuddle(Vector2 point)
+    {
+        for (int i = 0; i < sporePuddles.Count; i++)
         {
-            toxicSporeTickTimer = 0f;
-
-            float damagePerHalfSec = (sporeSlot.level >= 2 ? 30f : 15f) * 0.5f;
-
-            HashSet<GameObject> affectedEnemies = new HashSet<GameObject>();
-            if (toxicSporeTracker != null)
-            {
-                foreach (GameObject en in toxicSporeTracker.EnemiesInZone)
-                {
-                    if (en != null && en.activeInHierarchy) affectedEnemies.Add(en);
-                }
-            }
-
-            List<GameObject> circleEnemies = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(transform.position, radius);
-            for (int i = 0; i < circleEnemies.Count; i++)
-            {
-                if (circleEnemies[i] != null) affectedEnemies.Add(circleEnemies[i]);
-            }
-
-            foreach (GameObject enemy in affectedEnemies)
-            {
-                if (enemy == null || !enemy.activeInHierarchy) continue;
-
-                EvolvedWeaponBehaviors.DealEvolvedDamageToEnemy(enemy, damagePerHalfSec, false);
-                PlayerStats.ApplyPoisonToTarget(enemy, damagePerHalfSec, 1.5f);
-
-                if (sporeSlot.level >= 2)
-                {
-                    ApplySlowToTarget(enemy, 0.20f, 0.7f);
-                }
-            }
+            if (sporePuddles[i] != null && sporePuddles[i].Contains(point)) return true;
         }
+        return false;
     }
 
     /// <summary>
@@ -489,7 +444,7 @@ public class BoonCombatController : MonoBehaviour
 
         float areaMult = playerStats != null ? playerStats.AreaSizeMultiplier : 1f;
         float toxicZoneRadius = (sporeSlot.level >= 2 ? 5.0f : 3.0f) * areaMult;
-        bool isInSporeZone = Vector2.Distance(deathPosition, transform.position) <= toxicZoneRadius;
+        bool isInSporeZone = IsInsideSporePuddle(deathPosition);
 
         // เงื่อนไข: อยู่ในเขตหมอกพิษ Toxic Spore หรือติดสถานะ Poison
         if (!wasPoisoned && !isInSporeZone) return;
@@ -524,8 +479,7 @@ public class BoonCombatController : MonoBehaviour
             }
 
             // Visual: หมอกพิษย่อยระเบิดกระจายออกรัศมี 3 เมตร
-            SpawnShockwaveVisual(explosionCenter, explosionRadius, new Color(0.2f, 1.0f, 0.4f, 0.85f));
-            SpawnMiniSporeCloudVisual(explosionCenter, explosionRadius);
+            PoisonSmoke.Burst(explosionCenter, explosionRadius);   // green smoke instead of a solid disc + ring
         }
         finally
         {
@@ -562,12 +516,12 @@ public class BoonCombatController : MonoBehaviour
         }
 
         float areaMult = playerStats != null ? playerStats.AreaSizeMultiplier : 1f;
-        float baseRadius = flameSlot.level >= 2 ? 5.0f : 3.5f;
+        float baseRadius = flameSlot.level >= 2 ? 3.6f : 2.6f;   // smaller reach
 
         // สาย 3: เมื่อเข้าสู่สถานะ Resonance ขยายรัศมีของ Flame Ring ให้กว้างขึ้น 50%
         if (flameSlot.isResonant)
         {
-            baseRadius *= 1.50f; // ขยายกว้างขึ้น 50% (จาก 5.0m กลายเป็น 7.5m!)
+            baseRadius *= 1.25f; // resonance: +25% (3.6 -> 4.5)
         }
         float radius = baseRadius * areaMult;
 
@@ -585,6 +539,17 @@ public class BoonCombatController : MonoBehaviour
             }
         }
 
+        // real fire: flame tongues licking up from the ring
+        flameFxTimer += dt;
+        float flameInterval = 1f / Mathf.Max(20f, radius * 16f);
+        int guardFx = 0;
+        while (flameFxTimer >= flameInterval && guardFx++ < 6)
+        {
+            flameFxTimer -= flameInterval;
+            SpawnFlameTongue(radius, flameSlot.isResonant);
+        }
+        if (flameFxTimer > flameInterval) flameFxTimer = 0f;
+
         flameRingTickTimer += dt;
         if (flameRingTickTimer >= 0.5f)
         {
@@ -597,7 +562,7 @@ public class BoonCombatController : MonoBehaviour
                 GameObject enemy = enemies[i];
                 if (enemy == null || !enemy.activeInHierarchy) continue;
 
-                ApplyArmorReductionToTarget(enemy, 0.15f, 1.0f);
+                if (flameSlot.level >= 2) ApplyArmorReductionToTarget(enemy, 0.15f, 1.0f);   // Lv.2 only
                 EvolvedWeaponBehaviors.DealEvolvedDamageToEnemy(enemy, dmgPerHalfSec, false);
             }
         }
@@ -728,8 +693,13 @@ public class BoonCombatController : MonoBehaviour
         {
             if (staticAuraRenderer != null)
             {
-                staticAuraRenderer.color = new Color(0.4f, 0.85f, 1f, 0.85f); // ฟ้าผ่าพายุนีออนเรืองแสง
-                staticAuraZoneObj.transform.localScale = Vector3.one * 3.5f;
+                // Thunderstorm Domain: a clear ring that matches the real strike radius
+                float domArea = playerStats != null ? playerStats.AreaSizeMultiplier : 1f;
+                staticAuraRenderer.enabled = true;
+                staticAuraRenderer.sprite = WeaponVfx.ThinRing(0.035f);
+                staticAuraRenderer.color = new Color(0.35f, 0.75f, 1f, 0.95f);
+                staticAuraRenderer.sortingOrder = 13;
+                staticAuraZoneObj.transform.localScale = Vector3.one * (ThunderstormRadius * domArea * 2f);
             }
 
             thunderstormDomainTimer += dt;
@@ -742,10 +712,17 @@ public class BoonCombatController : MonoBehaviour
         else
         {
             // โหมดปกติก่อน Resonant: ต้องเดินสะสมระยะทาง
-            if (staticAuraRenderer != null)
+            if (staticAuraRenderer != null) staticAuraRenderer.enabled = false;   // no ring: lightning only
+
+            // small blue sparks crackling around the player
+            staticCrackleTimer += dt;
+            if (staticCrackleTimer >= 0.22f)
             {
-                staticAuraRenderer.color = new Color(0.95f, 0.95f, 0.25f, 0.45f);
-                staticAuraZoneObj.transform.localScale = Vector3.one * 1.5f;
+                staticCrackleTimer = 0f;
+                Vector2 c0 = transform.position;
+                Vector2 a0 = c0 + Random.insideUnitCircle.normalized * Random.Range(0.3f, 0.6f);
+                Vector2 b0 = c0 + Random.insideUnitCircle.normalized * Random.Range(0.9f, 1.5f);
+                WeaponVfx.Lightning(a0, b0, new Color(0.3f, 0.6f, 1f, 0.9f), 0.07f, 0.12f, 0);
             }
 
             Vector2 currentPosition = transform.position;
@@ -771,7 +748,7 @@ public class BoonCombatController : MonoBehaviour
     private void TriggerThunderstormDomainLightningStrike()
     {
         float areaMult = playerStats != null ? playerStats.AreaSizeMultiplier : 1f;
-        float radius = 10.0f * areaMult; // ระยะ 10 เมตรตามสเปก
+        float radius = ThunderstormRadius * areaMult;
 
         List<GameObject> enemies = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(transform.position, radius);
         if (enemies.Count == 0) return;
@@ -796,7 +773,7 @@ public class BoonCombatController : MonoBehaviour
                 Vector3 targetPos = target.transform.position;
                 Vector3 skyPos = targetPos + new Vector3(Random.Range(-0.5f, 0.5f), 5.5f, 0f);
                 SpawnLightningArcVisual(skyPos, targetPos, new Color(0.5f, 0.95f, 1f, 1f));
-                SpawnShockwaveVisual(targetPos, 1.4f, new Color(0.4f, 0.85f, 1f, 0.95f));
+                WeaponVfx.Flash(targetPos, new Color(0.4f, 0.7f, 1f, 0.9f), 1.4f, 0.16f);
             }
         }
     }
@@ -815,8 +792,8 @@ public class BoonCombatController : MonoBehaviour
             if (target != null && target.activeInHierarchy)
             {
                 EvolvedWeaponBehaviors.DealEvolvedDamageToEnemy(target, damage, true);
-                SpawnLightningArcVisual(transform.position, target.transform.position, new Color(0.95f, 0.95f, 0.25f, 0.95f));
-                SpawnShockwaveVisual(target.transform.position, 1.2f, new Color(0.95f, 0.95f, 0.25f, 0.95f));
+                SpawnLightningArcVisual(transform.position, target.transform.position, new Color(0.3f, 0.6f, 1f, 1f));
+                WeaponVfx.Flash(target.transform.position, new Color(0.4f, 0.7f, 1f, 0.9f), 1.2f, 0.16f);
             }
         }
     }
@@ -824,6 +801,9 @@ public class BoonCombatController : MonoBehaviour
     // ====================================================================================================
     // สาย 5: Magnetic Pulse & Event Horizon Void (Singularity Cannon + Magnetic Pulse Lv.2)
     // ====================================================================================================
+    private float eventHorizonTimer = 0f;
+    private const float EventHorizonInterval = 25f;
+
     private void UpdateMagneticPulse(PlayerInventory inv, float dt)
     {
         BoonSlotEntry pulseSlot = inv.GetBoonSlot(BoonItemType.MagneticPulse);
@@ -845,6 +825,21 @@ public class BoonCombatController : MonoBehaviour
                 ? new Color(0.70f, 0.15f, 1.0f, 0.65f) // ม่วงเข้มเรืองแสงหลุมดำ
                 : new Color(0.85f, 0.3f, 1f, 0.35f);
         }
+
+        // Resonance: Event Horizon Void -> a pentagram seal wipes the whole screen every 25 s
+        if (pulseSlot.isResonant)
+        {
+            eventHorizonTimer += dt;
+            if (eventHorizonTimer >= EventHorizonInterval)
+            {
+                if (EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(transform.position, 14f).Count > 0)
+                {
+                    eventHorizonTimer = 0f;
+                    EventHorizonPentagram.Trigger(transform.position);
+                }
+            }
+        }
+        else eventHorizonTimer = 0f;
 
         float interval = pulseSlot.level >= 2 ? 2.0f : 4.0f;
         magneticPulseTimer += dt;
@@ -886,7 +881,8 @@ public class BoonCombatController : MonoBehaviour
         StartCoroutine(AnimateExpandingPulse(radius, new Color(0.85f, 0.25f, 1f, 0.85f)));
 
         // ถ้าเข้าสู่สถานะ Resonance ให้เปิด Mini Black Hole เป็นเวลา 2 วินาที
-        if (isResonant)
+        // (only when there is something to pull in: no more empty black holes after the room is cleared)
+        if (isResonant && EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(pulseCenter, 5.5f * areaMult).Count > 0)
         {
             StartCoroutine(SpawnEventHorizonMiniBlackHole(pulseCenter, 5.5f * areaMult, 2.0f));
         }
@@ -997,7 +993,7 @@ public class BoonCombatController : MonoBehaviour
             nanoBarrierVisualObj = new GameObject("VFX_Boon_NanoBarrier");
             nanoBarrierVisualObj.transform.SetParent(transform, false);
             nanoBarrierVisualObj.transform.localPosition = Vector3.zero;
-            nanoBarrierVisualObj.transform.localScale = Vector3.one * 1.5f;
+            nanoBarrierVisualObj.transform.localScale = Vector3.one * 3.2f;
 
             nanoBarrierRenderer = nanoBarrierVisualObj.AddComponent<SpriteRenderer>();
             ProceduralSprites.EnsureVisible(nanoBarrierRenderer, ProceduralSprites.ShieldHex);
@@ -1044,8 +1040,7 @@ public class BoonCombatController : MonoBehaviour
             flameRingZoneObj.transform.localScale = Vector3.one * 7.0f;
 
             flameRingRenderer = flameRingZoneObj.AddComponent<SpriteRenderer>();
-            ProceduralSprites.EnsureVisible(flameRingRenderer, ProceduralSprites.CircleRing);
-            flameRingRenderer.sprite = ProceduralSprites.CircleRing;
+            flameRingRenderer.sprite = WeaponVfx.ThinRing(0.02f);
             flameRingRenderer.color = new Color(1f, 0.45f, 0.05f, 0.42f);
             flameRingRenderer.sortingOrder = 12;
             flameRingZoneObj.SetActive(false);
@@ -1060,8 +1055,7 @@ public class BoonCombatController : MonoBehaviour
             staticAuraZoneObj.transform.localScale = Vector3.one * 1.5f;
 
             staticAuraRenderer = staticAuraZoneObj.AddComponent<SpriteRenderer>();
-            ProceduralSprites.EnsureVisible(staticAuraRenderer, ProceduralSprites.CircleRing);
-            staticAuraRenderer.sprite = ProceduralSprites.CircleRing;
+            staticAuraRenderer.sprite = WeaponVfx.ThinRing(0.03f);
             staticAuraRenderer.color = new Color(0.95f, 0.95f, 0.25f, 0.45f);
             staticAuraRenderer.sortingOrder = 13;
             staticAuraZoneObj.SetActive(false);
@@ -1123,7 +1117,7 @@ public class BoonCombatController : MonoBehaviour
         BoonSlotEntry barrier = inv.GetBoonSlot(BoonItemType.NanoBarrier);
         if (barrier != null && barrier.level > 0 && playerHealth != null)
         {
-            float targetShield = barrier.level >= 2 ? 50f : 20f;
+            float targetShield = barrier.level >= 2 ? 2f : 1f;
             playerHealth.ConfigureNanoBarrier(targetShield);
             if (nanoBarrierVisualObj != null)
             {
@@ -1221,7 +1215,7 @@ public class BoonCombatController : MonoBehaviour
         }
     }
 
-    private static void ApplySlowToTarget(GameObject target, float slowPercent, float duration)
+    internal static void ApplySlowToTarget(GameObject target, float slowPercent, float duration)
     {
         if (target == null) return;
 
@@ -1278,23 +1272,21 @@ public class BoonCombatController : MonoBehaviour
 
     private void SpawnLightningArcVisual(Vector3 startPos, Vector3 targetPos, Color arcColor)
     {
-        GameObject arcObj = new GameObject("VFX_Boon_LightningArc");
-        arcObj.transform.position = (startPos + targetPos) * 0.5f;
+        // jagged blue electric bolt with a white core and a few side branches
+        Color blue = new Color(0.3f, 0.6f, 1f, 1f);
+        WeaponVfx.Lightning(startPos, targetPos, blue, 0.16f, 0.16f, 2);
+    }
 
-        Vector2 diff = targetPos - startPos;
-        float dist = diff.magnitude;
-        float angle = Mathf.Atan2(diff.y, diff.x) * Mathf.Rad2Deg;
-
-        arcObj.transform.rotation = Quaternion.Euler(0f, 0f, angle);
-        arcObj.transform.localScale = new Vector3(dist, 0.22f, 1f);
-
-        SpriteRenderer sr = arcObj.AddComponent<SpriteRenderer>();
-        ProceduralSprites.EnsureVisible(sr, ProceduralSprites.Shot);
-        sr.sprite = ProceduralSprites.Shot;
-        sr.color = arcColor;
-        sr.sortingOrder = 23;
-
-        Destroy(arcObj, 0.14f);
+    private void SpawnFlameTongue(float radius, bool resonant)
+    {
+        float ang = Random.value * Mathf.PI * 2f;
+        Vector2 dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang));
+        Vector2 pos = (Vector2)transform.position + dir * radius * Random.Range(0.97f, 1.03f);
+        Vector2 vel = dir * Random.Range(-0.25f, 0.25f) + new Vector2(Random.Range(-0.2f, 0.2f), Random.Range(1.1f, 2.3f));
+        Color hot = resonant ? new Color(1f, 0.85f, 0.3f, 0.95f) : new Color(1f, 0.75f, 0.2f, 0.9f);
+        Color cool = new Color(1f, 0.3f, 0.05f, 0.9f);
+        Color col = Color.Lerp(cool, hot, Random.value);
+        WeaponVfx.Particle(pos, vel, col, Random.Range(0.35f, 0.6f), Random.Range(0.4f, 0.75f), 1.2f, 1.6f, WeaponVfx.Glow);
     }
 
     private IEnumerator AnimateExpandingPulse(float maxRadius, Color color)
@@ -1393,5 +1385,71 @@ public class ToxicSporeTriggerTracker : MonoBehaviour
     private void OnDisable()
     {
         enemiesInZone.Clear();
+    }
+}
+
+
+/// <summary>A poison puddle thrown by the Toxic Spore boon (like Holy Water): ticks damage + poison, slows at Lv.2.</summary>
+public class SporePuddle : MonoBehaviour
+{
+    private const float PuddleDiscAlpha = 0.13f;
+    private const float PuddleRingAlpha = 0.34f;
+    private float radius, life, age, dps, tick;
+    private bool slow;
+    private SpriteRenderer disc, ring;
+
+    public static SporePuddle Create(Vector2 pos, float radius, float life, float dps, bool slow, bool resonant)
+    {
+        GameObject go = new GameObject("ToxicSpore_Puddle");
+        go.transform.position = pos;
+        SporePuddle p = go.AddComponent<SporePuddle>();
+        p.radius = radius; p.life = life; p.dps = dps; p.slow = slow;
+
+        Color c = resonant ? new Color(0.2f, 1f, 0.35f, 1f) : new Color(0.3f, 0.95f, 0.3f, 1f);
+        c = Color.Lerp(c, Color.white, 0.40f);   // paler green: the puddles were too dark/strong
+        GameObject d = new GameObject("Disc");
+        d.transform.SetParent(go.transform, false);
+        d.transform.localScale = Vector3.one * radius * 2f;
+        p.disc = d.AddComponent<SpriteRenderer>();
+        p.disc.sprite = WeaponVfx.Circle;
+        p.disc.color = new Color(c.r, c.g, c.b, PuddleDiscAlpha);
+        p.disc.sortingOrder = 3;
+
+        GameObject r = new GameObject("Ring");
+        r.transform.SetParent(go.transform, false);
+        r.transform.localScale = Vector3.one * radius * 2f;
+        p.ring = r.AddComponent<SpriteRenderer>();
+        p.ring.sprite = WeaponVfx.Ring;
+        p.ring.color = new Color(c.r, c.g, c.b, PuddleRingAlpha);
+        p.ring.sortingOrder = 4;
+
+        WeaponVfx.Burst(pos, c, 8, 3f, 0.4f, 0.16f);   // splash when it lands
+        return p;
+    }
+
+    public bool Contains(Vector2 point) { return ((Vector2)transform.position - point).sqrMagnitude <= radius * radius; }
+
+    private void Update()
+    {
+        age += Time.deltaTime;
+        float fade = Mathf.Clamp01((life - age) / 0.6f);
+        if (disc != null) { Color c = disc.color; c.a = PuddleDiscAlpha * fade; disc.color = c; }
+        if (ring != null) { Color c = ring.color; c.a = PuddleRingAlpha * fade; ring.color = c; }
+
+        tick += Time.deltaTime;
+        if (tick >= 0.5f)
+        {
+            tick = 0f;
+            List<GameObject> hit = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(transform.position, radius);
+            for (int i = 0; i < hit.Count; i++)
+            {
+                if (hit[i] == null) continue;
+                EvolvedWeaponBehaviors.DealEvolvedDamageToEnemy(hit[i], dps * 0.5f, false);
+                PlayerStats.ApplyPoisonToTarget(hit[i], dps * 0.5f, 1.5f);
+                if (slow) BoonCombatController.ApplySlowToTarget(hit[i], 0.20f, 0.7f);
+            }
+        }
+
+        if (age >= life) Destroy(gameObject);
     }
 }

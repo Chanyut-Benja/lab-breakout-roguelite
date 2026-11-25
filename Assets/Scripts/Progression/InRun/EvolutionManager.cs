@@ -106,6 +106,18 @@ public class EvolutionManager : MonoBehaviour
     private void Start()
     {
         HookInventoryEvents();
+        CheckAndTriggerEvolutions();
+    }
+
+    private void Update()
+    {
+        // ตรวจสอบอัตโนมัติทุกเฟรมเมื่อผู้เล่นถือ Evolution Core อยู่ในตัว
+        // หากพบเงื่อนไขครบ (อาวุธหลัก Lv.5 + Tech ตรงสาย Lv.>=1) จะทำการ Evolve ทันทีโดยไม่ต้องรอกล่องหรือหน้าต่างพิเศษ
+        PlayerInventory inv = PlayerInventory.Instance ?? PlayerInventory.GetOrCreate();
+        if (inv != null && inv.EvolutionCores > 0)
+        {
+            CheckAndTriggerEvolutions(inv);
+        }
     }
 
     private void OnDestroy()
@@ -132,6 +144,17 @@ public class EvolutionManager : MonoBehaviour
             inv.OnInventoryChanged -= HandleInventoryChanged;
             inv.OnInventoryChanged += HandleInventoryChanged;
         }
+
+        PlayerInventory.OnEvolutionCoreCountChangedStatic -= HandleCoreCountChanged;
+        PlayerInventory.OnEvolutionCoreCountChangedStatic += HandleCoreCountChanged;
+        PlayerInventory.OnWeaponUpgradedStatic -= HandleWeaponUpgraded;
+        PlayerInventory.OnWeaponUpgradedStatic += HandleWeaponUpgraded;
+        PlayerInventory.OnTechPassiveAddedStatic -= HandleTechChanged;
+        PlayerInventory.OnTechPassiveAddedStatic += HandleTechChanged;
+        PlayerInventory.OnTechPassiveUpgradedStatic -= HandleTechChanged;
+        PlayerInventory.OnTechPassiveUpgradedStatic += HandleTechChanged;
+        CurrencyManager.OnEvolutionCoreCountChanged -= HandleCoreCountChanged;
+        CurrencyManager.OnEvolutionCoreCountChanged += HandleCoreCountChanged;
     }
 
     public void UnhookInventoryEvents()
@@ -140,9 +163,36 @@ public class EvolutionManager : MonoBehaviour
         {
             PlayerInventory.Instance.OnInventoryChanged -= HandleInventoryChanged;
         }
+
+        PlayerInventory.OnEvolutionCoreCountChangedStatic -= HandleCoreCountChanged;
+        PlayerInventory.OnWeaponUpgradedStatic -= HandleWeaponUpgraded;
+        PlayerInventory.OnTechPassiveAddedStatic -= HandleTechChanged;
+        PlayerInventory.OnTechPassiveUpgradedStatic -= HandleTechChanged;
+        CurrencyManager.OnEvolutionCoreCountChanged -= HandleCoreCountChanged;
     }
 
     private void HandleInventoryChanged()
+    {
+        CheckAndTriggerEvolutions();
+    }
+
+    private void HandleCoreCountChanged(int currentCores)
+    {
+        if (currentCores > 0)
+        {
+            CheckAndTriggerEvolutions();
+        }
+    }
+
+    private void HandleWeaponUpgraded(WeaponSlotEntry weapon)
+    {
+        if (weapon != null && weapon.level >= 5)
+        {
+            CheckAndTriggerEvolutions();
+        }
+    }
+
+    private void HandleTechChanged(TechSlotEntry tech)
     {
         CheckAndTriggerEvolutions();
     }
@@ -173,7 +223,7 @@ public class EvolutionManager : MonoBehaviour
                 evolvedType = EvolvedWeaponType.ExecutionerMatrix,
                 evolvedName = "Executioner Matrix",
                 recipeText = "Nano-Blade Lv.5 + Targeting Lens",
-                description = "ดาเมจ 130 • คริติคอล 100% • ใบมีดซิกแซกตัดทะลุศัตรูทั้งจอ ทุก 0.5 วินาที",
+                description = "130 damage • always crits • two crescent waves (front and back) pierce every enemy • every 0.9s",
                 matchingBoon = BoonItemType.NanoBarrier,
                 resonantBoon = ResonantBoonType.BladeShieldMatrix,
                 resonanceName = "Blade Shield Matrix"
@@ -192,7 +242,7 @@ public class EvolutionManager : MonoBehaviour
                 evolvedType = EvolvedWeaponType.PlagueSporeSpreader,
                 evolvedName = "Plague Spore Spreader",
                 recipeText = "Bio-Needler Lv.5 + Genetic Extractor",
-                description = "หมอกพิษ 80/s กว้าง • ตกค้างบนพื้นต่อเนื่อง • ดูด EXP Gem ทั้งหมดอัตโนมัติ",
+                description = "Wide poison mist 80/s • lingers on the floor • auto-collects all EXP gems",
                 matchingBoon = BoonItemType.ToxicSpore,
                 resonantBoon = ResonantBoonType.EpidemicOutbreak,
                 resonanceName = "Epidemic Outbreak"
@@ -211,7 +261,7 @@ public class EvolutionManager : MonoBehaviour
                 evolvedType = EvolvedWeaponType.SupernovaCannon,
                 evolvedName = "Supernova Cannon",
                 recipeText = "Plasma Blaster Lv.5 + Overclock Chip",
-                description = "ลำแสงเลเซอร์กวาด 360° ตลอดเวลา • หมุนรอบละ 2s • ดาเมจ 90/hit",
+                description = "6 laser rays spin around you nonstop • 90 damage/hit",
                 matchingBoon = BoonItemType.FlameRing,
                 resonantBoon = ResonantBoonType.SolarCoreRing,
                 resonanceName = "Solar Core Ring"
@@ -230,7 +280,7 @@ public class EvolutionManager : MonoBehaviour
                 evolvedType = EvolvedWeaponType.StormCitadel,
                 evolvedName = "Storm Citadel",
                 recipeText = "Tesla Orb Lv.5 + Bio-Fuel Tank",
-                description = "ฟ้าผ่าสุ่มทั่วจอ 6 ครั้ง/วินาที • ดาเมจ 60 ต่อเป้าหมาย",
+                description = "6 big lightning orbs orbit far around you • 30 damage per hit, hitting constantly",
                 matchingBoon = BoonItemType.StaticAura,
                 resonantBoon = ResonantBoonType.ThunderstormDomain,
                 resonanceName = "Thunderstorm Domain"
@@ -249,7 +299,7 @@ public class EvolutionManager : MonoBehaviour
                 evolvedType = EvolvedWeaponType.SingularityCannon,
                 evolvedName = "Singularity Cannon",
                 recipeText = "Gravity Grenadier Lv.5 + Graviton Capacitor",
-                description = "ลำแสงดูดรวมศัตรูจุดเดียว • ระเบิดทำลาย 1,200 ดาเมจ ทุก 4 วินาที",
+                description = "Throws a black hole every 3s • 60 impact damage • pulls enemies in for 4s (55 damage/s)",
                 matchingBoon = BoonItemType.MagneticPulse,
                 resonantBoon = ResonantBoonType.EventHorizonVoid,
                 resonanceName = "Event Horizon Void"

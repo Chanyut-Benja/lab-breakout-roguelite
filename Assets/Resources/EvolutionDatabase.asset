@@ -12,8 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a1d388851b7f42ce806f19644fdc0427, type: 3}
   m_Name: EvolutionDatabase
   m_EditorClassIdentifier: 
-  executionerMatrixIcon: {fileID: 21300000, guid: 49afd98cc1ccd5a4e88d66e0132dda50, type: 3}
-  plagueSporeSpreaderIcon: {fileID: 21300000, guid: 6401e84d91e321840bc1bccb83154b7c, type: 3}
-  supernovaCannonIcon: {fileID: 21300000, guid: f11c4bc799603ae488949a043c6b819c, type: 3}
-  stormCitadelIcon: {fileID: 21300000, guid: 40496e2d8b0944941b01a94d7dcbee18, type: 3}
-  singularityCannonIcon: {fileID: 21300000, guid: bc6441e455b2ff74a8873d7e5d47920e, type: 3}
+  executionerMatrixIcon: {fileID: 21300000, guid: eda78eb6cebd9db46aa248598c8226b2, type: 3}
+  plagueSporeSpreaderIcon: {fileID: 21300000, guid: ddb48c78165e52e42ac7bbc1cc37db24, type: 3}
+  supernovaCannonIcon: {fileID: 21300000, guid: 27c076bbd6332c34ca3aa7e325c44ff4, type: 3}
+  stormCitadelIcon: {fileID: 21300000, guid: 973f6339c96c85e4b895de945fc42fdd, type: 3}
+  singularityCannonIcon: {fileID: 21300000, guid: d0d09a3d1cbe700428bfacf80c4dc7db, type: 3}

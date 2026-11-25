@@ -106,5 +106,4 @@ namespace Enemies.Types
 }
 
 public class BreachWarden : Enemies.Types.BreachWardenEnemy { }
-public class BreachWardenEnemy : Enemies.Types.BreachWardenEnemy { }
 public class BreachWardenMiniBoss : Enemies.Types.BreachWardenEnemy { }

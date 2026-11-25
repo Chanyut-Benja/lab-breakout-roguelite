@@ -54,6 +54,8 @@ namespace Enemies.Bosses
             }
 
             base.Awake();
+            SkinLibrary.Apply(gameObject, "architect");
+            maxTurretsCap = Mathf.Max(maxTurretsCap, 6);
         }
 
         protected override void InitializeStates()
@@ -76,11 +78,13 @@ namespace Enemies.Bosses
             // Phase 1: Deploy Turrets + EMP Slam + Plasma Burst
             phase1Attacks.Clear();
             phase1Attacks.Add(deployTurretsAttack);
+            phase1Attacks.Add(deployTurretsAttack);   // the Architect's signature move: twice the odds
             phase1Attacks.Add(empSlamAttack);
             phase1Attacks.Add(plasmaBurstAttack);
 
             // Phase 2: Deploy Turrets + EMP Slam + Plasma Burst + Plasma Gatling
             phase2Attacks.Clear();
+            phase2Attacks.Add(deployTurretsAttack);
             phase2Attacks.Add(deployTurretsAttack);
             phase2Attacks.Add(empSlamAttack);
             phase2Attacks.Add(plasmaBurstAttack);
@@ -91,6 +95,7 @@ namespace Enemies.Bosses
             phase3Attacks.Add(plasmaGatlingAttack);
             phase3Attacks.Add(plasmaBurstAttack);
             phase3Attacks.Add(empSlamAttack);
+            phase3Attacks.Add(deployTurretsAttack);
             phase3Attacks.Add(deployTurretsAttack);
 
             // Transitions & Death

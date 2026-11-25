@@ -129,6 +129,8 @@ namespace Enemies.Bosses.States
                 Vector3 spawnPos = boss.transform.position + offset;
 
                 GameObject minionObj = Object.Instantiate(minionPrefab, spawnPos, Quaternion.identity);
+                SkinLibrary.ApplyEnemy(minionObj);   // same art + walk-through colliders as normal enemies (was a plain light-blue square)
+                foreach (Collider2D mc in minionObj.GetComponentsInChildren<Collider2D>(true)) mc.isTrigger = true;
                 EnemyBase minionEnemy = minionObj.GetComponent<EnemyBase>();
 
                 if (minionEnemy != null)

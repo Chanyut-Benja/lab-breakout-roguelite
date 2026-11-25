@@ -95,6 +95,8 @@ namespace Enemies.Core
                 enemyCollider.enabled = true;
             }
 
+            PlayerPhase.Apply(gameObject);   // the player walks/dashes through enemies
+
             cachedSeparationVector = Vector2.zero;
             stunRemainingTimer = 0f;
             slowRemainingTimer = 0f;
@@ -160,6 +162,22 @@ namespace Enemies.Core
         /// Contract with external systems (spawner, rooms).
         /// Injects target and difficulty without expensive Find() calls.
         /// </summary>
+        private Transform originalTarget;
+
+        /// <summary>Phantom Clone: temporarily chase a decoy instead of the player.</summary>
+        public void OverrideTarget(Transform decoy)
+        {
+            if (decoy == null) return;
+            if (originalTarget == null) originalTarget = Target;
+            Target = decoy;
+        }
+
+        public void RestoreTarget()
+        {
+            if (originalTarget != null) Target = originalTarget;
+            originalTarget = null;
+        }
+
         public virtual void Init(Transform target, float difficultyMultiplier = 1f)
         {
             Init(target, difficultyMultiplier, difficultyMultiplier, 1f);
@@ -308,6 +326,14 @@ namespace Enemies.Core
             if (other.CompareTag("Player"))
             {
                 HandlePlayerContact(other.gameObject);
+                return;
+            }
+
+            // contact damage while overlapping (the player no longer collides physically)
+            PlayerContactSensor sensor = other.GetComponent<PlayerContactSensor>();
+            if (sensor != null && sensor.Owner != null)
+            {
+                HandlePlayerContact(sensor.Owner);
             }
         }
 
@@ -355,6 +381,64 @@ namespace Enemies.Core
         public void SetData(EnemyData newData)
         {
             this.data = newData;
+        }
+    }
+
+    /// <summary>Marks the trigger that replaces the player's solid body for enemy contact damage.</summary>
+    public class PlayerContactSensor : MonoBehaviour
+    {
+        public GameObject Owner;
+    }
+
+    /// <summary>
+    /// Vampire-Survivors style movement: the player passes through enemies (also while dashing)
+    /// but still takes contact damage through a trigger sensor.
+    /// </summary>
+    public static class PlayerPhase
+    {
+        private static GameObject player;
+        private static Collider2D[] playerSolids;
+
+        private static bool Resolve()
+        {
+            if (player == null)
+            {
+                player = GameObject.FindWithTag("Player");
+                playerSolids = null;
+                if (player == null) return false;
+
+                // trigger sensor that keeps contact damage working
+                if (player.GetComponentInChildren<PlayerContactSensor>() == null)
+                {
+                    float r = 0.4f;
+                    Collider2D main = player.GetComponent<Collider2D>();
+                    if (main != null) r = Mathf.Max(0.3f, Mathf.Min(main.bounds.extents.x, main.bounds.extents.y));
+                    GameObject s = new GameObject("ContactSensor");
+                    s.transform.SetParent(player.transform, false);
+                    CircleCollider2D cc = s.AddComponent<CircleCollider2D>();
+                    cc.isTrigger = true;
+                    cc.radius = r / Mathf.Max(0.01f, player.transform.lossyScale.x);
+                    s.AddComponent<PlayerContactSensor>().Owner = player;
+                }
+
+                System.Collections.Generic.List<Collider2D> solids = new System.Collections.Generic.List<Collider2D>();
+                foreach (Collider2D c in player.GetComponentsInChildren<Collider2D>())
+                    if (!c.isTrigger) solids.Add(c);
+                playerSolids = solids.ToArray();
+            }
+            return playerSolids != null;
+        }
+
+        public static void Apply(GameObject enemy)
+        {
+            if (enemy == null || !Resolve()) return;
+            Collider2D[] cols = enemy.GetComponentsInChildren<Collider2D>(true);
+            for (int i = 0; i < cols.Length; i++)
+            {
+                if (cols[i] == null || cols[i].isTrigger) continue;
+                for (int j = 0; j < playerSolids.Length; j++)
+                    if (playerSolids[j] != null) Physics2D.IgnoreCollision(cols[i], playerSolids[j], true);
+            }
         }
     }
 }

@@ -126,7 +126,7 @@ public class HUDSlotUI : MonoBehaviour
         {
             if (borderImage != null) borderImage.color = ResonantGold;
             if (bgImage != null) bgImage.color = new Color(0.18f, 0.12f, 0.03f, 0.95f);
-            SetLevelText("★EVO", ResonantGold);
+            SetLevelText("EVO", ResonantGold);
             SetNameText(hasIcon ? "" : fallbackName, ResonantGold);
             SetResonanceActive(true, ResonantGold);
         }
@@ -176,7 +176,7 @@ public class HUDSlotUI : MonoBehaviour
         {
             if (borderImage != null) borderImage.color = ResonantPurple;
             if (bgImage != null) bgImage.color = new Color(0.20f, 0.08f, 0.28f, 0.98f);
-            SetLevelText("★RESO", ResonantGold);
+            SetLevelText("RESO", ResonantGold);
             SetNameText(hasIcon ? "" : fallbackName, ResonantPurple);
             SetResonanceActive(true, ResonantPurple);
         }

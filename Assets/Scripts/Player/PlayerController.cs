@@ -144,6 +144,7 @@ public class PlayerController : MonoBehaviour
         isDashing = true;
 
         if (playerHealth == null) playerHealth = GetComponent<PlayerHealth>();
+        if (SkillMajorEffects.Instance != null) SkillMajorEffects.Instance.OnDashStart(transform.position, dashDirection);   // Phantom Clone
 
         // Passive Skill - Overclock Dash (N-03 Cyber-Swift):
         // 1. ได้รับสถานะ I-Frame ตลอดช่วงที่กำลัง Dash (ไม่รับความเสียหายจากการโจมตีหรือการชนของศัตรู)
@@ -167,6 +168,7 @@ public class PlayerController : MonoBehaviour
 
         yield return new WaitForSeconds(dashDuration);
 
+        if (SkillMajorEffects.Instance != null) SkillMajorEffects.Instance.CheckPerfectDash(transform.position);   // Bullet Time
         rb.linearVelocity = Vector2.zero;
         isDashing = false;
 

@@ -12,9 +12,23 @@ public class EnemyProjectile : MonoBehaviour
 
     public bool IsReflected => isReflected;
 
+    private SpriteRenderer blinkArt;
+    private Sprite[] blinkFrames;
+
     private void Awake()
     {
         ProceduralSprites.EnsureVisible(GetComponentInChildren<SpriteRenderer>(), ProceduralSprites.Shot);
+        SpriteRenderer art = GetComponentInChildren<SpriteRenderer>();
+        Sprite shot = SkinLibrary.ProjectileSprite();
+        if (art != null && shot != null) { art.sprite = shot; art.color = Color.white; }
+        // the two dots are two frames: blink between them
+        Sprite[] frames = SkinLibrary.ProjectileFrames();
+        if (art != null && frames != null && frames.Length == 2)
+        {
+            blinkArt = art;
+            blinkFrames = frames;
+            art.sprite = frames[0];
+        }
     }
 
     public void Setup(Vector2 shootDirection, float customDamage = -1f, float customSpeed = -1f)
@@ -22,7 +36,7 @@ public class EnemyProjectile : MonoBehaviour
         direction = shootDirection.normalized;
         isReflected = false;
 
-        if (customDamage > 0f) damage = customDamage;
+        if (customDamage > 0f) damage = customDamage * 0.55f;   // enemy shots hit softer
         if (customSpeed > 0f) speed = customSpeed;
 
         timer = 0f;
@@ -54,6 +68,7 @@ public class EnemyProjectile : MonoBehaviour
     {
         transform.Translate(Vector3.right * speed * Time.deltaTime);
         timer += Time.deltaTime;
+        if (blinkArt != null) blinkArt.sprite = blinkFrames[((int)(Time.time / 0.1f)) & 1];
         if (timer >= lifeTime)
         {
             Destroy(gameObject);

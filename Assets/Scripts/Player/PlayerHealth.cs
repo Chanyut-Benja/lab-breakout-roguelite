@@ -20,6 +20,7 @@ public class PlayerHealth : MonoBehaviour, IDamageable
     [SerializeField] private Text hpText;
 
     private PlayerStats playerStats;
+    private RectTransform psionicBar;   // purple strip after the HP fill showing the Psionic Barrier shield
 
     public float CurrentHealth => currentHealth;
     public float MaxHealth => maxHealth;
@@ -34,6 +35,9 @@ public class PlayerHealth : MonoBehaviour, IDamageable
     public event System.Action<float> OnShieldDamaged;
     public event System.Action<float> OnPlayerDamaged;
 
+    private float barrierGraceUntil;
+
+    /// <summary>maxShield = number of hits the barrier can block (Lv.1 = 1, Lv.2 = 2).</summary>
     public void ConfigureNanoBarrier(float maxShield)
     {
         float clampedMax = Mathf.Max(0f, maxShield);
@@ -121,9 +125,12 @@ public class PlayerHealth : MonoBehaviour, IDamageable
 
     public void TakeDamage(float amount)
     {
+        if (currentHealth > 0f && amount > 0f && isDashInvulnerable && SkillMajorEffects.Instance != null) SkillMajorEffects.Instance.OnDodged();   // Lightning Reflexes
         if (currentHealth <= 0f || amount <= 0f || IsInvulnerable) return;
+        if (Time.time < barrierGraceUntil) return;   // grace window after a barrier block
 
         lastDamageReceivedTime = Time.time;
+        if (SkillMajorEffects.Instance != null) SkillMajorEffects.Instance.TryPsionicEmergency();   // Psionic Barrier: heal + shield when hit under 30% HP
         float bonusIFrame = playerStats != null ? playerStats.BonusIFrameDuration : 0f;
         invulnerableUntil = Time.time + iFrameDuration + bonusIFrame;
 
@@ -148,24 +155,28 @@ public class PlayerHealth : MonoBehaviour, IDamageable
             }
         }
 
-        // หักความเสียหายเข้าเกราะ Nano-Barrier ก่อน
+        // Nano-Barrier: every charge blocks one whole hit. After a block there is a short grace window.
         if (currentBarrierShield > 0f)
         {
-            float absorbed = Mathf.Min(currentBarrierShield, remainingDamage);
-            currentBarrierShield -= absorbed;
-            remainingDamage -= absorbed;
-            OnShieldDamaged?.Invoke(absorbed);
+            currentBarrierShield = Mathf.Max(0f, currentBarrierShield - 1f);
+            remainingDamage = 0f;
+            barrierGraceUntil = Time.time + 0.4f;
+            OnShieldDamaged?.Invoke(1f);
 
             if (currentBarrierShield <= 0f)
             {
                 currentBarrierShield = 0f;
-                // ทริกเกอร์เมื่อเกราะแตก (ใช้สำหรับ Resonance: Blade Shield Matrix ปล่อยคลื่นใบมีด 360 องศา Dmg 200)
-                OnBarrierBroken?.Invoke();
+                OnBarrierBroken?.Invoke();   // Resonance: the blade ring fires here
             }
         }
 
+        SkillMajorEffects fx = SkillMajorEffects.Instance;
+        if (fx != null && remainingDamage > 0f) remainingDamage = fx.AbsorbShield(remainingDamage);   // Psionic Barrier
+
         if (remainingDamage > 0f)
         {
+            if (fx != null && fx.TryAbsoluteArmor(currentHealth - remainingDamage, maxHealth))   // Absolute Armor
+                remainingDamage = Mathf.Min(remainingDamage, Mathf.Max(0f, currentHealth - 1f));
             currentHealth -= remainingDamage;
             currentHealth = Mathf.Clamp(currentHealth, 0, maxHealth);
         }
@@ -174,8 +185,8 @@ public class PlayerHealth : MonoBehaviour, IDamageable
 
         OnPlayerDamaged?.Invoke(amount);
 
-        if (AudioManager.Instance != null)
-            AudioManager.Instance.PlaySFX(AudioManager.Instance.hitSFX);
+        if (currentHealth > 0 && AudioManager.Instance != null)   // ถ้าตายจะเล่นเสียงตายแทน
+            AudioManager.Instance.PlayHurtSFX();
 
         if (currentHealth <= 0)
         {
@@ -224,6 +235,47 @@ public class PlayerHealth : MonoBehaviour, IDamageable
         UpdateHealthUI();
     }
 
+    private void LateUpdate()
+    {
+        // something else (e.g. the EXP bar) can write to the shared slider; always restore the real HP
+        if (healthSlider != null && (!Mathf.Approximately(healthSlider.maxValue, maxHealth) || !Mathf.Approximately(healthSlider.value, currentHealth)))
+        {
+            healthSlider.maxValue = maxHealth;
+            healthSlider.value = currentHealth;
+        }
+        UpdatePsionicBar();
+    }
+
+    private float PsionicShield => SkillMajorEffects.Instance != null ? SkillMajorEffects.Instance.CurrentShield : 0f;
+
+    private void UpdatePsionicBar()
+    {
+        if (healthSlider == null) return;
+        float sh = PsionicShield;
+        if (psionicBar == null)
+        {
+            if (sh <= 0f) return;
+            var go = new GameObject("PsionicShieldBar", typeof(RectTransform), typeof(Image));
+            psionicBar = go.GetComponent<RectTransform>();
+            psionicBar.SetParent(healthSlider.transform, false);
+            psionicBar.offsetMin = Vector2.zero;
+            psionicBar.offsetMax = Vector2.zero;
+            var img = go.GetComponent<Image>();
+            img.color = new Color(0.7f, 0.4f, 1f, 0.9f);
+            img.raycastTarget = false;
+        }
+        bool on = sh > 0f && maxHealth > 0f;
+        if (psionicBar.gameObject.activeSelf != on) psionicBar.gameObject.SetActive(on);
+        if (!on) return;
+        psionicBar.SetAsLastSibling();
+        float a = Mathf.Clamp01(currentHealth / maxHealth);
+        float b = Mathf.Clamp01((currentHealth + sh) / maxHealth);
+        psionicBar.anchorMin = new Vector2(a, 0f);
+        psionicBar.anchorMax = new Vector2(b, 1f);
+        psionicBar.offsetMin = Vector2.zero;
+        psionicBar.offsetMax = Vector2.zero;
+    }
+
     private void UpdateHealthUI()
     {
         if (healthSlider != null)
@@ -234,9 +286,10 @@ public class PlayerHealth : MonoBehaviour, IDamageable
 
         if (hpText != null)
         {
-            if (currentBarrierShield > 0f)
+            float totalShield = currentBarrierShield + PsionicShield;
+            if (totalShield > 0f)
             {
-                hpText.text = $"{Mathf.CeilToInt(Mathf.Max(0f, currentHealth))} / {Mathf.CeilToInt(maxHealth)} HP (+{Mathf.CeilToInt(currentBarrierShield)} Shield)";
+                hpText.text = $"{Mathf.CeilToInt(Mathf.Max(0f, currentHealth))} / {Mathf.CeilToInt(maxHealth)} HP (+{Mathf.CeilToInt(totalShield)} Shield)";
             }
             else
             {
@@ -248,6 +301,7 @@ public class PlayerHealth : MonoBehaviour, IDamageable
     private void Die()
     {
         Debug.Log("Player Died!");
+        if (AudioManager.Instance != null) AudioManager.Instance.PlayPlayerDeadSFX();
         gameObject.SetActive(false);
 
         if (GameOverManager.Instance != null)
@@ -258,8 +312,10 @@ public class PlayerHealth : MonoBehaviour, IDamageable
 
     public void SetMaxHealthFromStats(float newMaxHealth)
     {
+        // Do NOT refill HP here: raise current HP only by the amount max HP grew.
+        float delta = newMaxHealth - maxHealth;
         maxHealth = newMaxHealth;
-        currentHealth = newMaxHealth;
+        currentHealth = Mathf.Clamp(currentHealth + Mathf.Max(0f, delta), 0f, maxHealth);
         UpdateHealthUI();
         Debug.Log($"[PlayerHealth] Updated MaxHealth to: {currentHealth}");
     }

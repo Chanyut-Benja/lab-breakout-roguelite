@@ -16,6 +16,6 @@ MonoBehaviour:
   techName: Genetic Extractor
   description: Increases Pickup Radius and RP Bonus.
   matchingWeapon: 1
-  icon: {fileID: 21300000, guid: 2ef0377aeba37a44abf1d5b3fe999a9c, type: 3}
+  icon: {fileID: 21300000, guid: f29ee9360b1c53c4ea649045f9375568, type: 3}
   primaryBonusPerLevel: 0.25
   secondaryBonusPerLevel: 0.1

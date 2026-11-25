@@ -104,6 +104,7 @@ public class InGameHUDController : MonoBehaviour
         ApplyDarkSciFiSkin();
         SubscribeEvents();
         RefreshHUD();
+        UI.BossHealthBarUI.EnsureExists(GetComponentInParent<Canvas>());
     }
 
     private void OnDestroy()
@@ -535,6 +536,7 @@ public class InGameHUDController : MonoBehaviour
         BuildResourceHUDDisplay(canvas);
         BuildInGameHUDPanel(canvas);
         RefreshHUD();
+        UI.BossHealthBarUI.EnsureExists(GetComponentInParent<Canvas>());
     }
 
     private void EnsureCanvasScaler(Canvas canvas)

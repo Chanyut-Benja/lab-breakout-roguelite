@@ -53,7 +53,7 @@ public class NanoBladeSlash : MonoBehaviour
     /// </summary>
     public static float GetBaseCooldown(int level, bool isEvolved = false)
     {
-        if (isEvolved) return 0.50f;
+        if (isEvolved) return 0.90f;   // Executioner Matrix: slower, bigger waves (was 0.50)
         float t = Mathf.Clamp01((Mathf.Clamp(level, 1, 5) - 1) / 4f);
         return Mathf.Lerp(0.80f, 0.45f, t);
     }
@@ -75,7 +75,7 @@ public class NanoBladeSlash : MonoBehaviour
     public static float GetSlashRange(int level, bool isEvolved = false)
     {
         float t = Mathf.Clamp01((Mathf.Clamp(level, 1, 5) - 1) / 4f);
-        float baseRange = isEvolved ? 4.5f : Mathf.Lerp(2.6f, 3.4f, t);
+        float baseRange = isEvolved ? 4.5f : Mathf.Lerp(2.7f, 4.5f, t);   // bigger, and grows clearly with level
         float areaMultiplier = PlayerStats.Instance != null ? PlayerStats.Instance.AreaSizeMultiplier : 1f;
         return baseRange * areaMultiplier;
     }
@@ -95,7 +95,11 @@ public class NanoBladeSlash : MonoBehaviour
         float slashRange = GetSlashRange(clampedLevel, isEvolved);
 
         // 1. ตรวจจับและทำดาเมจ + ผลักศัตรูในขอบเขตครึ่งวงกลม (180 องศาด้านหน้า)
-        ExecuteArcHitDetection(attacker.position, dir, slashRange, rawDamage, isEvolved, knockbackMeters);
+        float coneArc = Mathf.Min(170f, 120f + 10f * clampedLevel);   // base sword: a wide cone that opens up with level
+        float coneMinDot = isEvolved ? -0.15f : Mathf.Cos(coneArc * 0.5f * Mathf.Deg2Rad) - 0.05f;
+        ExecuteArcHitDetection(attacker.position, dir, slashRange, rawDamage, isEvolved, knockbackMeters, -1f, coneMinDot);
+
+        WeaponVfx.Burst(attacker.position + (Vector3)(dir * slashRange * 0.6f), new Color(0.6f, 0.95f, 1f, 1f), 6 + clampedLevel * 2, 6f, 0.25f, 0.14f);
 
         // 2. สร้าง Visual คลื่นใบมีดพลังงานสีฟ้า-ขาวที่ใหญ่และสว่างขึ้นตามเลเวล
         GameObject slashObj = new GameObject(isEvolved ? "ExecutionerMatrix_Slash" : $"NanoBlade_Slash_Lv{clampedLevel}");
@@ -112,9 +116,26 @@ public class NanoBladeSlash : MonoBehaviour
         NanoBladeSlash slash = slashObj.AddComponent<NanoBladeSlash>();
         slash.SetupVisual(dir, clampedLevel, slashRange, isEvolved, sr);
 
-        if (AudioManager.Instance != null && AudioManager.Instance.shootSFX != null)
+        // Original look: a bright blue crescent with a white inner crescent and a flash (the friend's sprite is hidden).
+        sr.enabled = false;
         {
-            AudioManager.Instance.PlaySFX(AudioManager.Instance.shootSFX);
+            float arcDeg = isEvolved ? 156f : coneArc;
+            Color blade = new Color(0.45f, 0.85f, 1f, Mathf.Clamp01(0.75f + 0.05f * clampedLevel));
+            if (isEvolved) blade = new Color(0.7f, 0.95f, 1f, 0.95f);
+            Vector2 o = attacker.position;
+            if (!isEvolved)
+            {
+                // soft cone fill under the curved edge
+                WeaponVfx.Spawn(WeaponVfx.Cone(arcDeg), o, angle, new Color(blade.r, blade.g, blade.b, 0.55f), slashRange * 0.6f, slashRange * 1.0f, 0.22f);
+            }
+            WeaponVfx.Spawn(WeaponVfx.Crescent(arcDeg), o, angle, blade, slashRange * 0.55f, slashRange * 1.08f, 0.24f);
+            WeaponVfx.Spawn(WeaponVfx.Crescent(arcDeg * 0.85f), o, angle, new Color(1f, 1f, 1f, 0.85f), slashRange * 0.45f, slashRange * 0.98f, 0.2f);
+            WeaponVfx.Flash(o + dir * slashRange * 0.4f, new Color(0.7f, 0.95f, 1f, 0.5f), slashRange * 0.9f, 0.15f);
+        }
+
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlaySlashSFX();
         }
 
         return slash;
@@ -126,12 +147,15 @@ public class NanoBladeSlash : MonoBehaviour
         float radius,
         float baseDamage,
         bool forceCrit,
-        float knockbackMeters)
+        float knockbackMeters,
+        float whipHalfHeight = -1f,
+        float minDot = -0.15f)
     {
         Collider2D[] colliders = Physics2D.OverlapCircleAll(origin, radius);
         if (colliders == null || colliders.Length == 0) return;
 
         HashSet<GameObject> hitTargets = new HashSet<GameObject>();
+        int struck = 0;
 
         for (int i = 0; i < colliders.Length; i++)
         {
@@ -154,10 +178,18 @@ public class NanoBladeSlash : MonoBehaviour
             // เช็กว่าอยู่ในมุมครึ่งวงกลมด้านหน้า (180 องศา หรือ dot >= -0.15f เพื่อให้โดนศัตรูที่ประชิดตัวด้วย)
             Vector2 dirToEnemy = dist > 0.001f ? (toEnemy / dist) : forwardDir;
             float dot = Vector2.Dot(forwardDir, dirToEnemy);
-            if (dist > 0.45f && dot < -0.15f)
+            if (whipHalfHeight > 0f)
+            {
+                // whip: a long, thin strip straight out to one side
+                float along = Vector2.Dot(toEnemy, forwardDir);
+                float across = Mathf.Abs(forwardDir.x * toEnemy.y - forwardDir.y * toEnemy.x);
+                if (along < -0.3f || along > radius || across > whipHalfHeight + 0.4f) continue;
+            }
+            else if (dist > 0.45f && dot < minDot)
                 continue;
 
             hitTargets.Add(targetObj);
+            struck++;
 
             bool isCrit = forceCrit;
             float finalDamage = baseDamage;
@@ -186,9 +218,11 @@ public class NanoBladeSlash : MonoBehaviour
             // ผลักศัตรูถอยหลังตามระยะ 1.5m -> 3.0m อย่างแม่นยำ
             ApplyKnockbackDisplacement(targetObj, dirToEnemy, knockbackMeters);
         }
+
+        SkillMajorEffects.OnNanoBladeSwing(origin, struck);   // Blast Nova (Major node)
     }
 
-    private static void ApplyKnockbackDisplacement(GameObject enemyObj, Vector2 pushDir, float knockbackMeters)
+    internal static void ApplyKnockbackDisplacement(GameObject enemyObj, Vector2 pushDir, float knockbackMeters)
     {
         if (enemyObj == null || !enemyObj.activeInHierarchy || knockbackMeters <= 0f) return;
 

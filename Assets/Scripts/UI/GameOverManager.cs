@@ -272,13 +272,13 @@ public class GameOverManager : MonoBehaviour
     public void RestartGame()
     {
         Time.timeScale = 1f;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+        SceneLoader.Load(SceneManager.GetActiveScene().name);
     }
 
     public void GoToMainMenu()
     {
         Time.timeScale = 1f;
-        SceneManager.LoadScene("MainMenuScene");
+        SceneLoader.Load("MainMenuScene");
     }
 
     public static Font GetDefaultFont()
@@ -342,6 +342,14 @@ public class GameOverManager : MonoBehaviour
             {
                 child.gameObject.SetActive(false);
             }
+        }
+
+        // The summary window was baked into the scene (Tools > Bake Game UI): only fill in this run's numbers.
+        Transform bakedWindow = targetPanel.transform.Find("SummaryWindow");
+        if (Application.isPlaying && bakedWindow != null && bakedWindow.Find("InnerBg/RPCalculationBox/RPInnerBg/BreakdownRow") != null)
+        {
+            RefreshSummaryTexts(bakedWindow, isVictory, finalRP, totalVaultRP);
+            return;
         }
 
         // Find or create SummaryWindow
@@ -657,6 +665,68 @@ public class GameOverManager : MonoBehaviour
             }
         }
 #endif
+    }
+
+    /// <summary>Fills the numbers of a summary window that already exists in the scene (no rebuilding).</summary>
+    private void RefreshSummaryTexts(Transform window, bool isVictory, int finalRP, int totalVaultRP)
+    {
+        Transform inner = window.Find("InnerBg");
+        Transform stats = inner.Find("CombatStatsBox/StatsInnerBg");
+        int totalSec = Mathf.FloorToInt(runElapsedTime);
+        SetText(stats, "Col1Text", $"Rooms Cleared:   <color=#00E5FF><b>{normalRoomsCleared}</b></color>\nBosses Defeated:   <color=#FFD166><b>{bossesDefeated}</b></color>");
+        SetText(stats, "Col2Text", $"Total Kills:   <color=#FF5566><b>{totalEnemiesKilled}</b></color>\nSurviving Time:   <color=#FFFFFF><b>{totalSec / 60:D2}:{totalSec % 60:D2}</b></color>");
+
+        Transform rp = inner.Find("RPCalculationBox/RPInnerBg");
+        int normalRP = normalRoomsCleared * ResearchTreeManager.RP_PER_NORMAL_ROOM;
+        int bossRP = bossesDefeated * ResearchTreeManager.RP_PER_BOSS_KILL;
+        int floorRP = (floor1Completed ? ResearchTreeManager.RP_BONUS_FLOOR_1 : 0) + (floor2Completed ? ResearchTreeManager.RP_BONUS_FLOOR_2 : 0);
+        float rpMultiplier = PlayerStats.Instance != null ? PlayerStats.Instance.RPBonusMultiplier : 1f;
+        string floorClearDesc = (floor1Completed && floor2Completed) ? "Floor Clear Bonus (Floor 1 +400, Floor 2 +1,000)" :
+                                floor1Completed ? "Floor Clear Bonus (Floor 1 Completed)" : "Floor Clear Bonus (None)";
+        Color floorValColor = floorRP > 0 ? new Color(0.20f, 0.83f, 0.60f, 1f) : new Color(0.40f, 0.45f, 0.52f, 1f);
+        string modifierDesc = (rpMultiplier > 1.001f ? $"Genetic Extractor Multiplier ({rpMultiplier:F2}x)" : "Standard Multiplier (1.00x)") + (inRunBonusRP > 0 ? " + In-Run Crystals" : "");
+        string modifierVal = (rpMultiplier > 1.001f ? $"\u00d7{rpMultiplier:F2}" : "") + (inRunBonusRP > 0 ? $" (+{inRunBonusRP} RP)" : (rpMultiplier <= 1.001f ? "1.00x" : ""));
+
+        int row = 0;
+        for (int i = 0; i < rp.childCount; i++)
+        {
+            Transform r = rp.GetChild(i);
+            if (r.name != "BreakdownRow") continue;
+            Text l = r.Find("LeftLabel").GetComponent<Text>();
+            Text v = r.Find("RightValue").GetComponent<Text>();
+            switch (row)
+            {
+                case 0: l.text = $"Normal Rooms Cleared ({normalRoomsCleared} \u00d7 25 RP)"; v.text = $"+{normalRP} RP"; break;
+                case 1: l.text = $"Bosses Defeated ({bossesDefeated} \u00d7 75 RP)"; v.text = $"+{bossRP} RP"; break;
+                case 2: l.text = floorClearDesc; v.text = $"+{floorRP} RP"; v.color = floorValColor; break;
+                case 3: l.text = modifierDesc; v.text = modifierVal; break;
+            }
+            row++;
+        }
+
+        Text total = rp.Find("TotalNetRP").GetComponent<Text>();
+        total.text = $"TOTAL NET RP EARNED:   <color=#00E5FF><size=32>+{finalRP} RP</size></color>";
+        if (isVictory) victoryRPText = total; else gameOverRPText = total;
+        SetText(rp, "VaultBalance", $"CURRENT RESEARCH VAULT BALANCE:   {totalVaultRP} RP");
+
+        HookButton(inner, "RestartButton", RestartGame);
+        HookButton(inner, "MainMenuButton", GoToMainMenu);
+    }
+
+    private static void SetText(Transform parent, string child, string text)
+    {
+        Transform t = parent.Find(child);
+        if (t != null) { Text tx = t.GetComponent<Text>(); if (tx != null) tx.text = text; }
+    }
+
+    private static void HookButton(Transform parent, string child, UnityEngine.Events.UnityAction action)
+    {
+        Transform t = parent.Find(child);
+        if (t == null) return;
+        Button btn = t.GetComponent<Button>();
+        if (btn == null) return;
+        btn.onClick.RemoveAllListeners();
+        btn.onClick.AddListener(action);
     }
 
     private void CreateBreakdownRow(Transform parent, Font font, float yPos, string leftText, string rightText, Color leftColor, Color rightColor)

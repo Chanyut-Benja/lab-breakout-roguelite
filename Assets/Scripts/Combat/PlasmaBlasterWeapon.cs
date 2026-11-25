@@ -12,7 +12,7 @@ public class PlasmaBlasterData : ScriptableObject
 
     [Header("Damage (Lv.1 -> Lv.5)")]
     public float level1Damage = 10f;
-    public float level5Damage = 30f;
+    public float level5Damage = 28f;
 
     [Header("Cooldown / Fire Interval (Lv.1 -> Lv.5)")]
     public float level1Cooldown = 0.30f;
@@ -51,9 +51,13 @@ public class PlasmaBlasterProjectile : MonoBehaviour
     private float baseDamage = 10f;
     private float lifeTime = 2.5f;
     private bool isEvolved = false;
+    private int pierceLeft = 1;
+    private bool homing = true;
 
     private float elapsed = 0f;
     private readonly HashSet<GameObject> hitTargets = new HashSet<GameObject>();
+
+    public void SetHoming(bool on) { homing = on; }
 
     public void Initialize(
         Transform initialTarget,
@@ -63,7 +67,8 @@ public class PlasmaBlasterProjectile : MonoBehaviour
         float turnRate = 360f,
         float targetSearchRadius = 18f,
         float maxLifeTime = 2.5f,
-        bool evolved = false)
+        bool evolved = false,
+        int pierce = 1)
     {
         lockedTarget = initialTarget;
         baseDamage = damage;
@@ -72,6 +77,8 @@ public class PlasmaBlasterProjectile : MonoBehaviour
         searchRadius = targetSearchRadius;
         lifeTime = maxLifeTime;
         isEvolved = evolved;
+        pierceLeft = Mathf.Max(1, pierce);
+        homing = true;
 
         hitTargets.Clear();
         elapsed = 0f;
@@ -99,13 +106,13 @@ public class PlasmaBlasterProjectile : MonoBehaviour
     private void Update()
     {
         // หากเป้าหมายเดิมตายหรือหายไป ให้ค้นหาศัตรูที่ใกล้ที่สุดตัวใหม่อัตโนมัติ
-        if (lockedTarget == null || !lockedTarget.gameObject.activeInHierarchy)
+        if (homing && !AimSettings.MouseAim && (lockedTarget == null || !lockedTarget.gameObject.activeInHierarchy))
         {
             lockedTarget = PlasmaBlasterWeapon.FindNearestEnemy(transform.position, searchRadius);
         }
 
         // ปรับทิศทางพุ่งเข้าหาศัตรูที่ล็อกเป้าไว้อย่างแม่นยำ
-        if (lockedTarget != null && lockedTarget.gameObject.activeInHierarchy)
+        if (homing && lockedTarget != null && lockedTarget.gameObject.activeInHierarchy)
         {
             Vector2 toTarget = (Vector2)(lockedTarget.position - transform.position);
             if (toTarget.sqrMagnitude > 0.0001f)
@@ -206,8 +213,10 @@ public class PlasmaBlasterProjectile : MonoBehaviour
             TriggerSupernovaExplosion(targetObj.transform.position, finalDamage * 0.5f, targetObj);
         }
 
-        Destroy(gameObject);
-        return true;
+        pierceLeft--;
+        if (pierceLeft <= 0) { Destroy(gameObject); return true; }
+        homing = false;   // keep flying straight through the crowd
+        return false;
     }
 
     private static void TriggerSupernovaExplosion(Vector3 center, float splashDamage, GameObject primaryTarget)
@@ -254,7 +263,7 @@ public class PlasmaBlasterWeapon : MonoBehaviour
         if (data != null) return data.GetDamage(level);
 
         float t = Mathf.Clamp01((Mathf.Clamp(level, 1, 5) - 1) / 4f);
-        return Mathf.Lerp(10f, 30f, t); // Lv.1=10, Lv.2=15, Lv.3=20, Lv.4=25, Lv.5=30
+        return Mathf.Lerp(10f, 28f, t); // Lv.1=10, Lv.2=15, Lv.3=20, Lv.4=25, Lv.5=30
     }
 
     /// <summary>
@@ -317,6 +326,27 @@ public class PlasmaBlasterWeapon : MonoBehaviour
         PlasmaBlasterData data = null)
     {
         if (fireOrigin == null) return null;
+        // Phiera-style: Lv1-2 one aimed shot; Lv3-4 also fires backwards; Lv5 fires in four directions (+90 deg steps)
+        int lv = Mathf.Clamp(level, 1, 5);
+        PlasmaBlasterProjectile main = FireOne(fireOrigin, fallbackDirection, level, isEvolved, data, 0f, true);
+        if (!isEvolved && lv >= 3)
+        {
+            float[] extra = lv >= 5 ? new float[] { 90f, 180f, 270f } : new float[] { 180f };
+            for (int i = 0; i < extra.Length; i++)
+                FireOne(fireOrigin, fallbackDirection, level, isEvolved, data, extra[i], false);
+        }
+        return main;
+    }
+
+    private static PlasmaBlasterProjectile FireOne(
+        Transform fireOrigin,
+        Vector2 fallbackDirection,
+        int level,
+        bool isEvolved,
+        PlasmaBlasterData data,
+        float angleOffset,
+        bool homingOn)
+    {
 
         int clampedLevel = Mathf.Clamp(level, 1, 5);
         float damage = GetDamage(clampedLevel, isEvolved, data);
@@ -325,7 +355,7 @@ public class PlasmaBlasterWeapon : MonoBehaviour
         float turnRate = data != null ? data.homingTurnRateDeg : 360f;
         float lifeTime = data != null ? data.projectileLifeTime : 2.5f;
 
-        Transform nearestTarget = FindNearestEnemy(fireOrigin.position, searchRadius);
+        Transform nearestTarget = AimSettings.MouseAim ? null : FindNearestEnemy(fireOrigin.position, searchRadius);
         Vector2 launchDir = fallbackDirection.sqrMagnitude > 0.0001f ? fallbackDirection.normalized : Vector2.right;
 
         if (nearestTarget != null)
@@ -337,10 +367,12 @@ public class PlasmaBlasterWeapon : MonoBehaviour
             }
         }
 
+        if (angleOffset != 0f) launchDir = (Quaternion.Euler(0f, 0f, angleOffset) * launchDir).normalized;
+        if (!homingOn) nearestTarget = null;
         float areaMult = PlayerStats.Instance != null ? PlayerStats.Instance.AreaSizeMultiplier : 1f;
         GameObject plasmaObj = new GameObject(isEvolved ? "Supernova_PlasmaBall" : $"PlasmaBlaster_Ball_Lv{clampedLevel}");
         plasmaObj.transform.position = fireOrigin.position + (Vector3)(launchDir * 0.35f);
-        float scale = (isEvolved ? 1.15f : Mathf.Lerp(0.75f, 0.95f, (clampedLevel - 1) / 4f)) * areaMult;
+        float scale = (isEvolved ? 1.15f : Mathf.Lerp(0.75f, 0.95f, (clampedLevel - 1) / 4f)) * areaMult * 0.45f; // plasma bullets x0.45
         plasmaObj.transform.localScale = new Vector3(scale, scale, 1f);
 
         SpriteRenderer sr = plasmaObj.AddComponent<SpriteRenderer>();
@@ -350,6 +382,7 @@ public class PlasmaBlasterWeapon : MonoBehaviour
             ? new Color(1f, 0.35f, 0.15f, 1f)
             : new Color(1f, 0.65f, 0.18f, 1f); // สีส้ม-เหลืองพลาสม่าตามเอกสารหน้า 4
         sr.sortingOrder = 14;
+        ProjectileFx.Decorate(plasmaObj, sr.color, 3f, 0.3f, 0.22f, true, new Color(0.65f, 0.9f, 1f, 1f));
 
         CircleCollider2D col = plasmaObj.AddComponent<CircleCollider2D>();
         col.isTrigger = true;
@@ -360,7 +393,8 @@ public class PlasmaBlasterWeapon : MonoBehaviour
         rb.gravityScale = 0f;
 
         PlasmaBlasterProjectile projectile = plasmaObj.AddComponent<PlasmaBlasterProjectile>();
-        projectile.Initialize(nearestTarget, launchDir, damage, projSpeed, turnRate, searchRadius, lifeTime, isEvolved);
+        projectile.Initialize(nearestTarget, launchDir, damage, projSpeed, turnRate, searchRadius, lifeTime, isEvolved, isEvolved ? 1 : 2);
+        projectile.SetHoming(homingOn);
 
         if (AudioManager.Instance != null && AudioManager.Instance.shootSFX != null)
         {
@@ -391,6 +425,20 @@ public class PlasmaBlasterWeapon : MonoBehaviour
             }
         }
 
-        return Fire(playerTransform, fallbackDirection, plasmaLevel, isEvolved);
+        // aim at the nearest enemy, not along the dash (works with mouse aim too)
+        Vector2 dir = fallbackDirection;
+        Transform near = FindNearestEnemy(playerTransform.position, 18f);
+        if (near != null)
+        {
+            Vector2 to = (Vector2)(near.position - playerTransform.position);
+            if (to.sqrMagnitude > 0.0001f) dir = to.normalized;
+        }
+        else if (AimSettings.MouseAim)
+        {
+            Vector2 toMouse = AimSettings.MouseWorld(playerTransform.position) - (Vector2)playerTransform.position;
+            if (toMouse.sqrMagnitude > 0.001f) dir = toMouse.normalized;
+        }
+
+        return Fire(playerTransform, dir, plasmaLevel, isEvolved);
     }
 }

@@ -73,7 +73,6 @@ namespace Enemies.Core
         [Header("Sound Effects (SFX)")]
         [SerializeField] private AudioClip spawnSFX;
         [SerializeField] private AudioClip hitSFX;
-        [SerializeField] private AudioClip dieSFX;
         [SerializeField] private AudioClip telegraphSFX;
         [SerializeField] private AudioClip attackSFX;
 
@@ -128,7 +127,6 @@ namespace Enemies.Core
 
         public AudioClip SpawnSFX => spawnSFX;
         public AudioClip HitSFX => hitSFX;
-        public AudioClip DieSFX => dieSFX;
         public AudioClip TelegraphSFX => telegraphSFX;
         public AudioClip AttackSFX => attackSFX;
     }

@@ -7,7 +7,7 @@ using UnityEngine.Serialization;
 /// <summary>
 /// Dark Cyber-Lab Pause Menu Manager.
 /// ควบคุมการเปิด/ปิดหน้าต่าง Pause เมื่อกด ESC, จัดการ Time.timeScale,
-/// ป้องกันการเปิดซ้อนทับ LevelUp และ GameOver, และควบคุมปุ่ม Resume, Restart, Main Menu.
+/// ป้องกันการเปิดซ้อนทับ LevelUp และ GameOver, และควบคุมปุ่ม Resume, Settings, Main Menu, End Run.
 /// </summary>
 public class PauseManager : MonoBehaviour
 {
@@ -20,7 +20,6 @@ public class PauseManager : MonoBehaviour
 
     [Header("Menu Buttons")]
     [SerializeField] private Button resumeButton;
-    [SerializeField] private Button restartButton;
     [SerializeField] private Button mainMenuButton;
 
     [Header("Panel Background & Title (Optional)")]
@@ -72,6 +71,8 @@ public class PauseManager : MonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.Escape))
         {
+            // Esc ตอนอยู่หน้า Settings ให้ปิดแค่ Settings (ไม่ให้เด้งออกจาก Pause)
+            if (SettingsMenu.IsOpen || SettingsMenu.ClosedThisFrame || HowToPlayMenu.IsOpen || HowToPlayMenu.ClosedThisFrame) return;
             TogglePause();
         }
     }
@@ -115,9 +116,26 @@ public class PauseManager : MonoBehaviour
         {
             pauseMenuPanel.transform.SetAsLastSibling();
             pauseMenuPanel.SetActive(true);
+            StopAllCoroutines();
+            StartCoroutine(FadeIn(pauseMenuPanel));
         }
 
         Debug.Log("[PauseManager] Game Paused (Time.timeScale = 0).");
+    }
+
+    // Soft fade-in (unscaled time, works while the game is paused) so the screen does not snap from bright to dark in one frame.
+    private System.Collections.IEnumerator FadeIn(GameObject panel)
+    {
+        CanvasGroup cg = panel.GetComponent<CanvasGroup>();
+        if (cg == null) cg = panel.AddComponent<CanvasGroup>();
+        const float duration = 0.15f;
+        for (float t = 0f; t < duration; t += Time.unscaledDeltaTime)
+        {
+            if (panel == null || !panel.activeInHierarchy) break;
+            cg.alpha = t / duration;
+            yield return null;
+        }
+        if (cg != null) cg.alpha = 1f;
     }
 
     public void Resume()
@@ -147,30 +165,6 @@ public class PauseManager : MonoBehaviour
         Debug.Log("[PauseManager] Game Resumed (Time.timeScale = 1).");
     }
 
-    public void OnRestartClicked()
-    {
-        Debug.Log("[PauseManager] Restarting run...");
-        Time.timeScale = 1f;
-        isPaused = false;
-
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.ResetRunState();
-        }
-
-        ClearInRunData();
-
-        int activeSceneIndex = SceneManager.GetActiveScene().buildIndex;
-        if (activeSceneIndex >= 0)
-        {
-            SceneManager.LoadScene(activeSceneIndex);
-        }
-        else
-        {
-            SceneManager.LoadScene(SceneManager.GetActiveScene().name);
-        }
-    }
-
     public void OnMainMenuClicked()
     {
         Debug.Log("[PauseManager] Returning to Main Menu...");
@@ -183,10 +177,9 @@ public class PauseManager : MonoBehaviour
         }
 
         ClearInRunData();
-        SceneManager.LoadScene("MainMenuScene");
+        SceneLoader.Load("MainMenuScene");
     }
 
-    public void RestartGame() => OnRestartClicked();
     public void GoToMainMenu() => OnMainMenuClicked();
 
     private void ClearInRunData()
@@ -295,18 +288,9 @@ public class PauseManager : MonoBehaviour
             }
         }
 
-        if (restartButton == null)
-        {
-            restartButton = FindButtonInPanel(pauseMenuPanel, "Restart");
-            if (restartButton == null && secondaryPanel != null)
-            {
-                restartButton = FindButtonInPanel(secondaryPanel, "Restart");
-                if (restartButton != null)
-                {
-                    restartButton.transform.SetParent(pauseMenuPanel.transform, false);
-                }
-            }
-        }
+        // Restart button removed from the pause menu: delete any copy that still exists in the scene
+        DestroyRestartButtons(pauseMenuPanel);
+        DestroyRestartButtons(secondaryPanel);
 
         if (mainMenuButton == null)
         {
@@ -344,13 +328,6 @@ public class PauseManager : MonoBehaviour
             ConfigureButtonGraphic(resumeButton, NeonCyan);
         }
 
-        if (restartButton != null)
-        {
-            restartButton.onClick.RemoveListener(OnRestartClicked);
-            restartButton.onClick.AddListener(OnRestartClicked);
-            ConfigureButtonGraphic(restartButton, NeonAmber);
-        }
-
         if (mainMenuButton != null)
         {
             mainMenuButton.onClick.RemoveListener(OnMainMenuClicked);
@@ -358,7 +335,122 @@ public class PauseManager : MonoBehaviour
             ConfigureButtonGraphic(mainMenuButton, NeonRed);
         }
 
+        if (endRunButton == null && pauseMenuPanel != null)
+        {
+            Transform ex = pauseMenuPanel.transform.Find("EndRunButton");
+            endRunButton = ex != null ? ex.GetComponent<Button>()
+                : CreateSciFiButton("EndRunButton", pauseMenuPanel.transform, new Vector2(0f, -140f), "END RUN", NeonAmber, null);
+        }
+        HookButton(endRunButton, OnEndRunClicked);
+
+        if (settingsButton == null && pauseMenuPanel != null)
+        {
+            Transform sx = pauseMenuPanel.transform.Find("SettingsButton");
+            settingsButton = sx != null ? sx.GetComponent<Button>()
+                : CreateSciFiButton("SettingsButton", pauseMenuPanel.transform, new Vector2(0f, -210f), "SETTINGS", NeonCyan, null);
+        }
+        HookButton(settingsButton, SettingsMenu.Open);
+
+        if (howToButton == null && pauseMenuPanel != null)
+        {
+            Transform hx = pauseMenuPanel.transform.Find("HowToPlayButton");
+            howToButton = hx != null ? hx.GetComponent<Button>()
+                : CreateSciFiButton("HowToPlayButton", pauseMenuPanel.transform, new Vector2(0f, -280f), "HOW TO PLAY", NeonCyan, null);
+        }
+        HookButton(howToButton, HowToPlayMenu.Open);
+
+        LayoutPauseButtons();
         ConfigurePanelOverlay(pauseMenuPanel);
+    }
+
+    private static void HookButton(Button b, UnityEngine.Events.UnityAction action)
+    {
+        if (b == null) return;
+        b.onClick.RemoveListener(action);
+        b.onClick.AddListener(action);
+    }
+
+#if UNITY_EDITOR
+    /// <summary>
+    /// Editor only (right-click the component > Bake Pause Menu): creates the pause buttons as real objects in the scene
+    /// so they show up in the Hierarchy and can be edited by hand.
+    /// </summary>
+    [ContextMenu("Bake Pause Menu")]
+    public void BakePauseMenu()
+    {
+        ResolveUIReferences();
+        UnityEditor.EditorUtility.SetDirty(this);
+        if (pauseMenuPanel != null)
+        {
+            UnityEditor.EditorUtility.SetDirty(pauseMenuPanel);
+            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(pauseMenuPanel.scene);
+        }
+    }
+#endif
+
+    /// <summary>Big, evenly spaced pause buttons (2x the old size): RESUME, SETTINGS, MAIN MENU, END RUN.</summary>
+    private void LayoutPauseButtons()
+    {
+        Button[] order = { resumeButton, settingsButton, howToButton, mainMenuButton, endRunButton };
+        if (endRunButton != null)
+        {
+            Text el = endRunButton.GetComponentInChildren<Text>(true);
+            if (el != null) el.text = "END RUN";
+        }
+        if (mainMenuButton != null)
+        {
+            Text ml = mainMenuButton.GetComponentInChildren<Text>(true);
+            if (ml != null) ml.text = "MAIN MENU";
+        }
+        float y = 160f;
+        for (int i = 0; i < order.Length; i++)
+        {
+            Button b = order[i];
+            if (b == null) continue;
+            RectTransform rt = b.GetComponent<RectTransform>();
+            if (rt == null) continue;
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = new Vector2(0f, y);
+            rt.sizeDelta = new Vector2(340f, 64f);
+            Text t = b.GetComponentInChildren<Text>(true);
+            if (t != null)
+            {
+                t.fontSize = 30;
+                t.resizeTextForBestFit = false;
+            }
+            y -= 80f;
+        }
+
+        // สกินปุ่มพิกเซล: RESUME ส้ม, SETTINGS เขียวอมฟ้า, MAIN MENU ฟ้า, END RUN เทา
+        PixelButtonSkin.Style[] skins = { PixelButtonSkin.Style.Orange, PixelButtonSkin.Style.Teal, PixelButtonSkin.Style.Teal, PixelButtonSkin.Style.Blue, PixelButtonSkin.Style.Grey };
+        for (int i = 0; i < order.Length; i++) PixelButtonSkin.Apply(order[i], skins[i]);
+    }
+
+    private void DestroyRestartButtons(GameObject panel)
+    {
+        if (panel == null) return;
+        Button[] buttons = panel.GetComponentsInChildren<Button>(true);
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            if (buttons[i] != null && buttons[i].name.IndexOf("restart", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                if (Application.isPlaying) Destroy(buttons[i].gameObject); else DestroyImmediate(buttons[i].gameObject);
+            }
+        }
+    }
+
+    private Button settingsButton;
+    private Button howToButton;
+    private Button endRunButton;
+
+    /// <summary>Ends the run now and still pays out Research Points for the progress made.</summary>
+    public void OnEndRunClicked()
+    {
+        isPaused = false;
+        if (GameManager.Instance != null) GameManager.Instance.isPaused = false;
+        if (pauseMenuPanel != null) pauseMenuPanel.SetActive(false);
+        if (GameOverManager.Instance != null) GameOverManager.Instance.TriggerGameOver();
+        else OnMainMenuClicked();
     }
 
     private GameObject FindPanelInScene(string name)
@@ -421,15 +513,15 @@ public class PauseManager : MonoBehaviour
                 tRt.anchorMin = new Vector2(0.5f, 0.5f);
                 tRt.anchorMax = new Vector2(0.5f, 0.5f);
                 tRt.pivot = new Vector2(0.5f, 0.5f);
-                tRt.anchoredPosition = new Vector2(0f, 130f);
-                tRt.sizeDelta = new Vector2(400f, 60f);
+                tRt.anchoredPosition = new Vector2(0f, 262f);
+                tRt.sizeDelta = new Vector2(700f, 100f);
             }
 
             Text txt = titleTr.GetComponent<Text>();
             if (txt != null)
             {
                 txt.font = InGameHUDController.GetDefaultFont();
-                txt.fontSize = 42;
+                txt.fontSize = 56;
                 txt.fontStyle = FontStyle.Bold;
                 txt.alignment = TextAnchor.MiddleCenter;
                 txt.color = Color.white;

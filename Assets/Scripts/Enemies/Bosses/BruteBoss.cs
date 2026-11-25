@@ -39,6 +39,7 @@ namespace Enemies.Bosses
             }
 
             base.Awake();
+            SkinLibrary.Apply(gameObject, "brute");   // hand-drawn Brute sprite (rocks while walking)
         }
 
         protected override void InitializeStates()

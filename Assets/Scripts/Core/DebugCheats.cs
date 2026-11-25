@@ -99,6 +99,10 @@ public class DebugCheats : MonoBehaviour
             CheatKillAllEnemiesOnScreen();
         }
 
+        // [ and ]: go to the previous / next room map (to look at the 18 rooms)
+        if (Input.GetKeyDown(KeyCode.LeftBracket) && RoomManager.Instance != null) RoomManager.Instance.DebugJumpRoom(-1);
+        if (Input.GetKeyDown(KeyCode.RightBracket) && RoomManager.Instance != null) RoomManager.Instance.DebugJumpRoom(1);
+
         // [L]: ข้ามเวลาในห้องไปที่วินาทีที่ 89 ทันทีเพื่อทดสอบตัดจบห้อง
         if (Input.GetKeyDown(KeyCode.L))
         {
@@ -127,7 +131,7 @@ public class DebugCheats : MonoBehaviour
 
         int expNeeded = Mathf.Max(1, playerLevel.ExpToNextLevel - playerLevel.CurrentExp);
         Debug.Log($"[DebugCheats] [U] Granting +{expNeeded} EXP for immediate Level Up (Current Level: {playerLevel.CurrentLevel}).");
-        playerLevel.AddExperience(expNeeded);
+        playerLevel.AddExperienceRaw(expNeeded);
     }
 
     /// <summary>

@@ -109,6 +109,11 @@ public class PlayerStats : MonoBehaviour
             gameObject.AddComponent<BoonCombatController>();
         }
 
+        if (GetComponent<SkillMajorEffects>() == null)
+        {
+            gameObject.AddComponent<SkillMajorEffects>();
+        }
+
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         if (GetComponent<DebugCheats>() == null)
         {
@@ -183,7 +188,11 @@ public class PlayerStats : MonoBehaviour
 
     private void ApplyCharacterBaseStats()
     {
-        SpriteRenderer playerSprite = GetComponentInChildren<SpriteRenderer>();
+        SpriteRenderer playerSprite = null;
+        foreach (SpriteRenderer candidate in GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            if (candidate.gameObject.name != "Skin") { playerSprite = candidate; break; }
+        }
         if (playerSprite != null) playerSprite.sprite = ProceduralSprites.Agent;
 
         if (CharacterSelectionManager.Instance != null && CharacterSelectionManager.Instance.CurrentSelectedCharacter != null)
@@ -257,6 +266,11 @@ public class PlayerStats : MonoBehaviour
                 health.SetMaxHealthFromStats(MaxHealth);
             }
         }
+
+        // hand-drawn player sprite: 01 = Vanguard, 02 = Psionic, 03 = Cyber Swift
+        string skinSet = activeCharacterType == SubjectCharacterType.Psionic_N02 ? "player2"
+                       : activeCharacterType == SubjectCharacterType.CyberSwift_N03 ? "player3" : "player1";
+        SkinLibrary.Apply(gameObject, skinSet);
     }
 
     public void LoadMetaUpgrades()
@@ -326,10 +340,13 @@ public class PlayerStats : MonoBehaviour
     /// <summary>
     /// คำนวณความเสียหายร่วมกับโบนัสพลังโจมตี (เช่น Overdrive Stim +15%) และโอกาสติด Critical Hit
     /// </summary>
+    private float nextAttackCountTime;
+
     public float RollCriticalDamage(float rawDamage, out bool isCrit, bool forceCrit = false)
     {
         float scaledDamage = rawDamage * DamageMultiplier;
-        isCrit = forceCrit || (UnityEngine.Random.value < CritChance);
+        if (Time.time >= nextAttackCountTime) { nextAttackCountTime = Time.time + 0.25f; SkillMajorEffects.RegisterAttack(); }   // Overcharge Nova counts attacks
+        isCrit = forceCrit || (UnityEngine.Random.value < CritChance) || SkillMajorEffects.ConsumeGuaranteedCrit();   // Lightning Reflexes
         return isCrit ? (scaledDamage * CritMultiplier) : scaledDamage;
     }
 
@@ -338,6 +355,7 @@ public class PlayerStats : MonoBehaviour
     /// </summary>
     public void TryApplyMindShockOnCrit(GameObject targetObj, bool isCrit)
     {
+        CombatFx.Hit(targetObj, isCrit);   // shared hit sparks for every weapon
         if (!isCrit || !hasMindShockPassive || targetObj == null) return;
 
         float totalStun = MindShockStunDuration;
@@ -354,9 +372,22 @@ public class PlayerStats : MonoBehaviour
         }
     }
 
+    // Per-target stun cooldown: a target cannot be stunned again until its last stun ended plus a cooldown,
+    // so fast weapons (needles, orbs) cannot stun-lock enemies or bosses.
+    private static readonly System.Collections.Generic.Dictionary<int, float> nextStunAllowed = new System.Collections.Generic.Dictionary<int, float>();
+
     public static void ApplyStunToTarget(GameObject targetObj, float duration)
     {
         if (targetObj == null || duration <= 0f) return;
+
+        bool isBoss = targetObj.GetComponentInParent<Enemies.Bosses.BossBase>() != null;
+        if (isBoss) duration *= 0.5f;
+        int stunKey = targetObj.GetInstanceID();
+        float stunNow = Time.time;
+        float allowedAt;
+        if (nextStunAllowed.TryGetValue(stunKey, out allowedAt) && stunNow < allowedAt) return;
+        nextStunAllowed[stunKey] = stunNow + duration + (isBoss ? 6f : 2f);
+        if (nextStunAllowed.Count > 800) nextStunAllowed.Clear();
 
         EnemyHealth enemyHealth = targetObj.GetComponent<EnemyHealth>() ?? targetObj.GetComponentInChildren<EnemyHealth>() ?? targetObj.GetComponentInParent<EnemyHealth>();
         if (enemyHealth != null)
@@ -438,7 +469,8 @@ public class PlayerStats : MonoBehaviour
     {
         get
         {
-            float rawReduction = characterMetaBonuses.attackSpeedCooldownBonus + boonAttackSpeedPercent + boonAttackSpeedBonus + techCooldownReductionBonus;
+            float rawReduction = characterMetaBonuses.attackSpeedCooldownBonus + boonAttackSpeedPercent + boonAttackSpeedBonus + techCooldownReductionBonus
+                + (SkillMajorEffects.Instance != null ? SkillMajorEffects.Instance.AttackSpeedBonus : 0f);   // Overclock Overdrive
             return Mathf.Clamp(rawReduction, 0f, maxCooldownReduction);
         }
     }

@@ -16,6 +16,6 @@ MonoBehaviour:
   techName: Graviton Capacitor
   description: Increases operative movement speed.
   matchingWeapon: 4
-  icon: {fileID: 21300000, guid: 5df0df505aa71674d92dda90f4c728cf, type: 3}
+  icon: {fileID: 21300000, guid: 63081b40166176b4d8ac67588bd1b110, type: 3}
   primaryBonusPerLevel: 0.08
   secondaryBonusPerLevel: 0.0

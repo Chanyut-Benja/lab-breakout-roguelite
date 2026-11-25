@@ -283,6 +283,7 @@ public class BioNeedlerWeapon : MonoBehaviour
         sr.sprite = ProceduralSprites.Shot;
         sr.color = new Color(0.25f, 1f, 0.45f, 1f); // สีเขียวนีออนตามเอกสารหน้า 4
         sr.sortingOrder = 14;
+        ProjectileFx.Decorate(needleObj, new Color(0.25f, 1f, 0.45f, 1f), 2.2f, 0.16f, 0.2f);
 
         CircleCollider2D col = needleObj.AddComponent<CircleCollider2D>();
         col.isTrigger = true;

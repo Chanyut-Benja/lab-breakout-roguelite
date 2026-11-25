@@ -218,9 +218,11 @@ public class EvolutionPopupUI : MonoBehaviour
         if (canvasGroup != null) canvasGroup.alpha = 0f;
 
         float originalTimeScale = Time.timeScale;
+        bool didSlowMo = false;
         if (briefSlowMotion && originalTimeScale > 0.1f)
         {
             Time.timeScale = slowMotionScale; // สโลว์โมชันสั้นๆ เพิ่มความทรงพลังและไฮป์ตามสไตล์ Roguelite
+            didSlowMo = true;
         }
 
         float inDuration = 0.35f;
@@ -241,13 +243,16 @@ public class EvolutionPopupUI : MonoBehaviour
         if (canvasGroup != null) canvasGroup.alpha = 1f;
 
         // รอจนหมดช่วงสโลว์โมชันสั้นๆ แล้วคืนค่าความเร็วเวลาเดิมให้เกมเล่นต่ออย่างลื่นไหล
-        if (briefSlowMotion)
+        if (didSlowMo)
         {
             if (slowMotionDuration > inDuration)
             {
                 yield return new WaitForSecondsRealtime(slowMotionDuration - inDuration);
             }
-            Time.timeScale = originalTimeScale;
+            // only undo OUR slow-motion: if the level-up menu paused/resumed the game meanwhile, leave it alone
+            // (restoring a stale value of 0 here is what froze the game after picking the tech)
+            if (Mathf.Approximately(Time.timeScale, slowMotionScale))
+                Time.timeScale = originalTimeScale > 0.1f ? originalTimeScale : 1f;
         }
 
         // 4. แสดงค้างไว้กลางหน้าจอ (รวมเวลา 2-3 วินาที)
@@ -491,7 +496,7 @@ public class EvolutionPopupUI : MonoBehaviour
         descriptionText.fontSize = 18;
         descriptionText.color = DescGrey;
         descriptionText.alignment = TextAnchor.UpperLeft;
-        descriptionText.text = "ดาเมจ 130 • คริติคอล 100% • ใบมีดซิกแซกตัดทะลุศัตรูทั้งจอ ทุก 0.5 วินาที";
+        descriptionText.text = "130 damage • always crits • two crescent waves (front and back) pierce every enemy • every 0.9s";
         descriptionText.raycastTarget = false;
         descriptionText.horizontalOverflow = HorizontalWrapMode.Wrap;
         descriptionText.verticalOverflow = VerticalWrapMode.Overflow;

@@ -34,6 +34,15 @@ public class EnemySpawner : MonoBehaviour
     private Bounds arenaBounds;
     private bool hasArenaBounds;
 
+    /// <summary>Real enemy prefabs set in the scene; RoomWaveSpawner borrows them (looked up by name).</summary>
+    public GameObject FindEnemyPrefab(string nameContains)
+    {
+        if (enemyPrefabs == null) return null;
+        foreach (GameObject g in enemyPrefabs)
+            if (g != null && g.name.IndexOf(nameContains, System.StringComparison.OrdinalIgnoreCase) >= 0) return g;
+        return null;
+    }
+
     public WavePhase CurrentWavePhase => GetWavePhase(roomElapsedTime);
     public float RoomElapsedTime => roomElapsedTime;
 
@@ -72,6 +81,13 @@ public class EnemySpawner : MonoBehaviour
 
     private void CacheArenaBounds()
     {
+        if (RoomEnvironment.Instance != null)
+        {
+            arenaBounds = RoomEnvironment.Instance.ArenaBounds;
+            hasArenaBounds = true;
+            return;
+        }
+        hasArenaBounds = false;
         GameObject map = GameObject.Find("MapBoundaries");
         if (map != null)
         {
@@ -96,6 +112,7 @@ public class EnemySpawner : MonoBehaviour
 
     public void StartSpawning()
     {
+        CacheArenaBounds();   // the room map may have changed size/position
         isSpawning = true;
         roomElapsedTime = 0f;
         StopAllCoroutines();
@@ -153,14 +170,15 @@ public class EnemySpawner : MonoBehaviour
     public float GetCurrentSpawnRate()
     {
         int currentRoom = RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 1;
-        bool isBossRoom = RoomManager.Instance != null && RoomManager.Instance.IsBossRoom;
+        // only floor-1 boss rooms get fewer minions; floor 2+ boss rooms use the normal density
+        bool isBossRoom = RoomManager.Instance != null && RoomManager.Instance.IsBossRoom && currentRoom <= 9;
 
         if (isBossRoom)
         {
             float roomExp = 100f + 10f * currentRoom;
             float bossExp = currentRoom >= 18 ? 100f : (30f + 10f * (currentRoom / 3));
             float totalMinions = Mathf.Max(1f, (roomExp - bossExp) / 1.1f);
-            return totalMinions / 95f;
+            return totalMinions / 95f * 0.3f;   // boss rooms: 70% fewer minions
         }
 
         float totalEnemies = GetTotalEnemiesForRoom(currentRoom);
@@ -178,12 +196,12 @@ public class EnemySpawner : MonoBehaviour
     public int GetCurrentEnemyCap()
     {
         int currentRoom = RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 1;
-        bool isBossRoom = RoomManager.Instance != null && RoomManager.Instance.IsBossRoom;
+        bool isBossRoom = RoomManager.Instance != null && RoomManager.Instance.IsBossRoom && currentRoom <= 9;   // floor 2+ boss rooms: normal cap
 
         int maxCap = Mathf.RoundToInt(40f + 5.3f * (currentRoom - 1));
         if (isBossRoom)
         {
-            maxCap /= 2;
+            maxCap = Mathf.Max(4, Mathf.RoundToInt(maxCap * 0.5f * 0.3f));   // boss rooms: 70% fewer minions
         }
 
         maxEnemiesAtOnce = maxCap;
@@ -200,6 +218,16 @@ public class EnemySpawner : MonoBehaviour
             spawnInterval = 1f / currentRate;
 
             int currentCap = GetCurrentEnemyCap();
+
+            // Normal rooms are handled by RoomWaveSpawner; this spawner feeds boss rooms.
+            // If RoomWaveSpawner is not running (after a 3 s grace), this spawner takes over so rooms never stay empty.
+            bool bossRoom = RoomManager.Instance != null && RoomManager.Instance.IsBossRoom;
+            bool waveActive = Enemies.RoomWaveSpawner.Instance != null && Enemies.RoomWaveSpawner.Instance.IsSpawning;
+            if (!bossRoom && (waveActive || roomElapsedTime < 3f))
+            {
+                yield return new WaitForSeconds(0.25f);
+                continue;
+            }
 
             // Phase 4 (85s - 90s): หยุด Spawn เคลียร์สนาม
             if (roomElapsedTime >= 85f && roomElapsedTime <= 90f)

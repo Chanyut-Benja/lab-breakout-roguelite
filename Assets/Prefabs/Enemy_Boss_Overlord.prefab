@@ -215,3 +215,5 @@ MonoBehaviour:
   dasherData: {fileID: 11400000, guid: 86b6c8c2803147d9bb1329723a45c215, type: 2}
   rangedPrefab: {fileID: 1300000000000000001, guid: 1b7a2d04f5e84895a0dc9517cf3b9845, type: 3}
   rangedData: {fileID: 11400000, guid: a3297f272b564554889a6be6f57a9e59, type: 2}
+  acidPoolPrefab: {fileID: 1900000000000000001, guid: eb44da1b50f24947901b73139f7d6e45, type: 3}
+  turretPrefab: {fileID: 1800000000000000001, guid: 45ec68331c9a4767a6b8d0bfbf8c77af, type: 3}

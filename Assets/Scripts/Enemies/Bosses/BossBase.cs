@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Enemies.Bosses.States;
 using Enemies.Core;
 using Enemies.States;
+using UI;
 using UnityEngine;
 
 namespace Enemies.Bosses
@@ -57,12 +58,28 @@ namespace Enemies.Bosses
 
         protected override void Awake()
         {
+            Time.timeScale = 1f;
+
             if (bossConfig != null && data == null)
             {
                 data = bossConfig;
             }
 
             base.Awake();
+        }
+
+        protected virtual void Start()
+        {
+            Time.timeScale = 1f;
+
+            string bossName = bossConfig != null ? bossConfig.BossTitle : gameObject.name;
+            float maxHP = Health != null ? Health.MaxHealth : DefaultBaseMaxHP;
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.BindBoss(this);
+                BossHealthBarUI.Instance.ShowBossBar(bossName, maxHP);
+                BossHealthBarUI.Instance.UpdateBossHealth(Health != null ? Health.CurrentHealth : maxHP);
+            }
         }
 
         protected override void OnEnable()
@@ -96,6 +113,26 @@ namespace Enemies.Bosses
             }
 
             base.Update();
+            ContactFailsafe();
+        }
+
+        // Failsafe: if physics events miss the overlap (player standing inside the boss), still apply contact damage.
+        private Transform fsPlayer;
+        private Collider2D fsPlayerCol;
+        private Collider2D fsOwnCol;
+        private void ContactFailsafe()
+        {
+            if (Health == null || Health.IsDead) return;
+            if (fsPlayer == null)
+            {
+                GameObject p = GameObject.FindWithTag("Player");
+                if (p == null) return;
+                fsPlayer = p.transform;
+                fsPlayerCol = p.GetComponentInChildren<Collider2D>();
+            }
+            if (fsOwnCol == null) fsOwnCol = GetComponent<Collider2D>() ?? GetComponentInChildren<Collider2D>();
+            if (fsPlayerCol == null || fsOwnCol == null || !fsPlayerCol.enabled || !fsOwnCol.enabled) return;
+            if (fsPlayerCol.Distance(fsOwnCol).isOverlapped) HandlePlayerContact(fsPlayer.gameObject);
         }
 
         protected virtual void OnDisable()
@@ -117,6 +154,8 @@ namespace Enemies.Bosses
         {
             base.Init(target, hpMultiplier, damageMultiplier, speedMultiplier);
 
+            Time.timeScale = 1f;
+
             CurrentPhase = 1;
             MaxPhases = 3;
             combatElapsedTime = 0f;
@@ -129,6 +168,18 @@ namespace Enemies.Bosses
                 Health.SetExactMaxHealth(DefaultBaseMaxHP);
                 OnBossHealthChanged?.Invoke(Health.CurrentHealth, Health.MaxHealth);
             }
+
+            string bossName = bossConfig != null ? bossConfig.BossTitle : gameObject.name;
+            float maxHP = Health != null ? Health.MaxHealth : DefaultBaseMaxHP;
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.BindBoss(this);
+                BossHealthBarUI.Instance.ShowBossBar(bossName, maxHP);
+                BossHealthBarUI.Instance.UpdateBossHealth(Health != null ? Health.CurrentHealth : maxHP);
+            }
+
+            // แจ้งระบบเปิดแถบเลือดบอสทันที
+            NotifyBossSpawned();
         }
 
         protected override void StartInitialState()
@@ -141,6 +192,12 @@ namespace Enemies.Bosses
 
         private void HandleHealthChanged(float current, float max)
         {
+            // เมื่อบอสรับดาเมจ (TakeDamage): เรียก BossHealthBarUI.Instance.UpdateBossHealth(currentHp);
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.UpdateBossHealth(current);
+            }
+
             OnBossHealthChanged?.Invoke(current, max);
 
             if (max <= 0f) return;
@@ -167,6 +224,12 @@ namespace Enemies.Bosses
             if (isTimeEnraged || IsEnraged) return;
             isTimeEnraged = true;
             Debug.LogWarning($"[{bossConfig?.BossTitle ?? name}] Fight exceeded 180s (3 minutes)! Auto-Enrage (Phase 3) triggered!");
+
+            // เมื่อบอสเข้าสู่สภาวะ Enrage (ครบ 3 นาที): เรียก BossHealthBarUI.Instance.SetEnrageState(true);
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.SetEnrageState(true);
+            }
 
             if (CurrentPhase < 2)
             {
@@ -238,6 +301,12 @@ namespace Enemies.Bosses
             if (IsEnraged)
             {
                 remainingEnrageChainAttacks = 1;
+
+                // เมื่อบอสเข้าสู่สภาวะ Enrage (Phase 3): เรียก BossHealthBarUI.Instance.SetEnrageState(true);
+                if (BossHealthBarUI.Instance != null)
+                {
+                    BossHealthBarUI.Instance.SetEnrageState(true);
+                }
             }
             OnBossPhaseChanged?.Invoke(CurrentPhase);
             Debug.Log($"[{bossConfig?.BossTitle ?? name}] Advanced to Phase {CurrentPhase} (Speed x{GetPhaseSpeedMultiplier():F2})!");
@@ -255,6 +324,9 @@ namespace Enemies.Bosses
                 chargeState.OnPlayerContact(playerObj);
                 return;
             }
+
+            // underground (Digger tunnelling / emerging): no bump damage, only the telegraphed emerge hit hurts
+            if (stateMachine != null && stateMachine.CurrentState is BossBurrowEmergeState) return;
 
             // Normal contact damage when bumping into player
             float contactCooldown = data != null ? data.ContactDamageCooldown : 0.6f;
@@ -295,14 +367,31 @@ namespace Enemies.Bosses
         public virtual void NotifyBossSpawned()
         {
             string title = bossConfig != null ? bossConfig.BossTitle : gameObject.name;
-            float currentHP = Health != null ? Health.CurrentHealth : 100f;
-            float maxHP = Health != null ? Health.MaxHealth : 100f;
-            OnBossSpawned?.Invoke(title, currentHP, maxHP);
+            int room = bossConfig != null ? bossConfig.BossRoomNumber : (RoomManager.Instance != null ? RoomManager.Instance.CurrentRoom : 3);
+            string formattedTitle = $"{title.ToUpper()} - ROOM {room}";
+            float currentHP = Health != null ? Health.CurrentHealth : DefaultBaseMaxHP;
+            float maxHP = Health != null ? Health.MaxHealth : DefaultBaseMaxHP;
+
+            // เมื่อบอส Spawn: เรียก BossHealthBarUI.Instance.ShowBossBar(bossName, maxHp);
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.BindBoss(this);
+                BossHealthBarUI.Instance.ShowBossBar(formattedTitle, maxHP);
+                BossHealthBarUI.Instance.UpdateBossHealth(currentHP);
+            }
+
+            OnBossSpawned?.Invoke(formattedTitle, currentHP, maxHP);
         }
 
         public virtual void NotifyBossDefeated()
         {
             ClearMinions();
+
+            // เมื่อบอสตาย: เรียก BossHealthBarUI.Instance.HideBossBar();
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.HideBossBar();
+            }
 
             OnBossDied?.Invoke(bossConfig);
 
@@ -314,8 +403,53 @@ namespace Enemies.Bosses
             Debug.Log($"[{bossConfig?.BossTitle ?? name}] Defeated! Fired OnBossDied and RoomManager.OnBossDefeated.");
         }
 
+        /// <summary>
+        /// เมื่อบอสรับดาเมจ (TakeDamage): เรียก BossHealthBarUI.Instance.UpdateBossHealth(currentHealth);
+        /// </summary>
+        public virtual void TakeDamage(float amount)
+        {
+            if (Health != null)
+            {
+                Health.TakeDamage(amount);
+            }
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.UpdateBossHealth(Health != null ? Health.CurrentHealth : 0f);
+            }
+        }
+
+        public virtual void TakeDamage(float amount, Vector2 knockback)
+        {
+            if (Health != null)
+            {
+                Health.TakeDamage(amount, knockback);
+            }
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.UpdateBossHealth(Health != null ? Health.CurrentHealth : 0f);
+            }
+        }
+
+        /// <summary>
+        /// เมื่อบอสตาย (Die): เรียก BossHealthBarUI.Instance.HideBossBar();
+        /// </summary>
+        public virtual void Die()
+        {
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.HideBossBar();
+            }
+            OnDeath();
+        }
+
         public override void OnDeath()
         {
+            // เมื่อบอสตาย: เรียก BossHealthBarUI.Instance.HideBossBar();
+            if (BossHealthBarUI.Instance != null)
+            {
+                BossHealthBarUI.Instance.HideBossBar();
+            }
+
             if (bossDeadState != null && stateMachine != null)
             {
                 stateMachine.ChangeState(bossDeadState);

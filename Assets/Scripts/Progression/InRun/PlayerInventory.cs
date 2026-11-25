@@ -88,6 +88,7 @@ public class BoonSlotEntry
     public BoonItemType boonType;
     public int level = 1; // Max Lv.2
     public bool isResonant = false;
+    public bool resonanceCharged = false;   // Resonance only wakes after a Gene Enhancer / floor-2 boss reward
     public ResonantBoonType resonantForm = ResonantBoonType.None;
 }
 
@@ -971,6 +972,23 @@ public class PlayerInventory : MonoBehaviour
         // 1. เช็กว่ามี Boon Lv.2 ที่อาวุธตรงสาย Evolve แล้วแต่ยังไม่ Resonate หรือไม่
         CheckEvolutionsAndResonances();
 
+        // 1b. Lv.2 boon + evolved weapon already waiting: the enhancer charges it -> Resonance
+        for (int i = 0; i < boons.Count; i++)
+        {
+            if (boons[i].level >= MaxBoonLevel && !boons[i].isResonant)
+            {
+                WeaponSlotEntry mw = GetWeaponSlot(GetMatchingWeapon(boons[i].boonType));
+                if (mw != null && mw.isEvolved)
+                {
+                    boons[i].resonanceCharged = true;
+                    CheckEvolutionsAndResonances();
+                    SyncStatsToPlayer();
+                    OnInventoryChanged?.Invoke();
+                    return true;
+                }
+            }
+        }
+
         // 2. ลองหา Boon Lv.1 ที่มีอาวุธตรงสายเพื่ออัปเป็น Lv.2 ก่อน (จะได้เกิด Resonance ทันทีถ้าอาวุธ Evolved แล้ว)
         for (int i = 0; i < boons.Count; i++)
         {
@@ -980,6 +998,7 @@ public class PlayerInventory : MonoBehaviour
                 if (matchingWeapon != null && matchingWeapon.isEvolved)
                 {
                     boons[i].level = MaxBoonLevel;
+                    boons[i].resonanceCharged = true;
                     Debug.Log($"[PlayerInventory] Gene Enhancer upgraded {GetBoonName(boons[i].boonType)} to Lv.2 and triggered Resonance!");
                     CheckEvolutionsAndResonances();
                     SyncStatsToPlayer();
@@ -1061,7 +1080,7 @@ public class PlayerInventory : MonoBehaviour
         for (int i = 0; i < boons.Count; i++)
         {
             BoonSlotEntry boon = boons[i];
-            if (boon.isResonant || boon.level < MaxBoonLevel)
+            if (boon.isResonant || boon.level < MaxBoonLevel || !boon.resonanceCharged)
                 continue;
 
             WeaponType requiredWeapon = GetMatchingWeapon(boon.boonType);
@@ -1255,68 +1274,81 @@ public class PlayerInventory : MonoBehaviour
 
     private LevelUpUpgradeData TryGetReservedEvolutionCard(List<(LevelUpUpgradeData card, float weight)> candidates)
     {
-        // ค้นหาอาวุธที่ถึง Lv.3 ขึ้นไปและยังไม่ Evolve โดยให้ความสำคัญกับอาวุธประจำตัวหรืออาวุธที่ใกล้ Evolve ที่สุด
-        WeaponSlotEntry bestCandidateWeapon = null;
-        int highestProgressScore = -1;
-
+        // กฎการันตีการ์ดคู่ Evolve: หากมีอาวุธเลเวล >= 3 ให้จองการ์ด 1 ใน 3 ใบเสมอ สำหรับชิ้นส่วนที่ยังขาด
+        // (Tech ตรงสาย หรือตัวอัปเกรดอาวุธนั้น) จนกว่าเงื่อนไข Evolve จะครบ
+        List<WeaponSlotEntry> eligibleWeapons = new List<WeaponSlotEntry>();
         for (int i = 0; i < weapons.Count; i++)
         {
             WeaponSlotEntry w = weapons[i];
-            if (w.isEvolved || w.level < 3) continue;
+            if (w != null && !w.isEvolved && w.level >= 3)
+            {
+                eligibleWeapons.Add(w);
+            }
+        }
 
-            TechPassiveType matchingTech = GetMatchingTech(w.weaponType);
-            bool hasMatchingTech = GetTechLevel(matchingTech) >= 1;
+        if (eligibleWeapons.Count == 0) return null;
+
+        // จัดลำดับความสำคัญ: อาวุธที่ใกล้ครบเงื่อนไขที่สุด หรือ อาวุธประจำตัว (Starter Weapon)
+        eligibleWeapons.Sort((a, b) =>
+        {
+            TechPassiveType techA = GetMatchingTech(a.weaponType);
+            TechPassiveType techB = GetMatchingTech(b.weaponType);
+            bool hasTechA = GetTechLevel(techA) >= 1;
+            bool hasTechB = GetTechLevel(techB) >= 1;
+
+            int scoreA = a.level * 10 + (hasTechA ? 5 : 0) + (a.isStarterWeapon ? 2 : 0);
+            int scoreB = b.level * 10 + (hasTechB ? 5 : 0) + (b.isStarterWeapon ? 2 : 0);
+            return scoreB.CompareTo(scoreA);
+        });
+
+        for (int i = 0; i < eligibleWeapons.Count; i++)
+        {
+            WeaponSlotEntry w = eligibleWeapons[i];
+            TechPassiveType reqTech = GetMatchingTech(w.weaponType);
+            bool ownsTech = GetTechLevel(reqTech) >= 1;
             bool needsWeaponLevel = w.level < MaxWeaponLevel;
-            bool needsTech = !hasMatchingTech && !IsTechSlotsFull;
+            bool needsTech = !ownsTech && !IsTechSlotsFull;
 
-            // ถ้าเงื่อนไข Evolve ครบแล้ว (อาวุธ Lv.5 + มี Tech ตรงสายแล้ว รอแค่ Core) ไม่ต้องจองการ์ดอีก
+            // ถ้าเงื่อนไข Evolve ครบแล้ว (อาวุธ Lv.5 + Tech ตรงสาย Lv.>=1) ไม่ต้องจองการ์ดสำหรับอาวุธนี้
             if (!needsWeaponLevel && !needsTech) continue;
 
-            int score = w.level * 10 + (hasMatchingTech ? 5 : 0) + (w.isStarterWeapon ? 2 : 0);
-            if (score > highestProgressScore)
+            List<LevelUpUpgradeData> missingPieces = new List<LevelUpUpgradeData>();
+
+            // ชิ้นส่วนที่ขาด 1: การอัปเลเวลอาวุธนั้นจนถึง Lv.5
+            if (needsWeaponLevel)
             {
-                highestProgressScore = score;
-                bestCandidateWeapon = w;
-            }
-        }
-
-        if (bestCandidateWeapon == null) return null;
-
-        TechPassiveType reqTech = GetMatchingTech(bestCandidateWeapon.weaponType);
-        bool ownsTech = GetTechLevel(reqTech) >= 1;
-
-        List<LevelUpUpgradeData> missingPieces = new List<LevelUpUpgradeData>();
-
-        // ชิ้นส่วนที่ขาด 1: การอัปเลเวลอาวุธนั้นจนถึง Lv.5
-        if (bestCandidateWeapon.level < MaxWeaponLevel)
-        {
-            for (int i = 0; i < candidates.Count; i++)
-            {
-                var c = candidates[i].card;
-                if (c.category == UpgradeCategory.Weapon && c.weaponType == bestCandidateWeapon.weaponType)
+                for (int cIdx = 0; cIdx < candidates.Count; cIdx++)
                 {
-                    missingPieces.Add(c);
-                    break;
+                    var c = candidates[cIdx].card;
+                    if (c != null && c.category == UpgradeCategory.Weapon && c.weaponType == w.weaponType)
+                    {
+                        missingPieces.Add(c);
+                        break;
+                    }
                 }
             }
-        }
 
-        // ชิ้นส่วนที่ขาด 2: Tech Passive ตรงสาย (กรณีที่ยังไม่มีและช่อง Tech ยังว่าง)
-        if (!ownsTech && !IsTechSlotsFull)
-        {
-            for (int i = 0; i < candidates.Count; i++)
+            // ชิ้นส่วนที่ขาด 2: Tech Passive ตรงสาย (กรณีที่ยังไม่มีและช่อง Tech ยังว่าง)
+            if (needsTech)
             {
-                var c = candidates[i].card;
-                if (c.category == UpgradeCategory.TechPassive && c.techType == reqTech)
+                for (int cIdx = 0; cIdx < candidates.Count; cIdx++)
                 {
-                    missingPieces.Add(c);
-                    break;
+                    var c = candidates[cIdx].card;
+                    if (c != null && c.category == UpgradeCategory.TechPassive && c.techType == reqTech)
+                    {
+                        missingPieces.Add(c);
+                        break;
+                    }
                 }
+            }
+
+            if (missingPieces.Count > 0)
+            {
+                return missingPieces[UnityEngine.Random.Range(0, missingPieces.Count)];
             }
         }
 
-        if (missingPieces.Count == 0) return null;
-        return missingPieces[UnityEngine.Random.Range(0, missingPieces.Count)];
+        return null;
     }
 
     public List<LevelUpUpgradeData> GenerateWeightedBoonCards(int count = 3)
@@ -1340,9 +1372,9 @@ public class PlayerInventory : MonoBehaviour
                 {
                     int nextLv = existing.level + 1;
                     WeaponSlotEntry w = GetWeaponSlot(matchingWeapon);
-                    bool willResonate = (w != null && w.isEvolved);
+                    bool willResonate = false;   // leveling a boon no longer resonates by itself (needs Gene Enhancer / boss reward)
                     string title = willResonate
-                        ? $"★ RESONATE: {GetResonantBoonName(GetResonantBoonType(boonType))}"
+                        ? $"RESONATE: {GetResonantBoonName(GetResonantBoonType(boonType))}"
                         : $"{GetBoonName(boonType)} (Lv.{nextLv} MAX)";
 
                     var card = LevelUpUpgradeData.CreateBoonCard(
@@ -1426,27 +1458,56 @@ public class PlayerInventory : MonoBehaviour
 
     public static string GetWeaponUpgradeDescription(WeaponType type, int targetLevel)
     {
+        int lv = Mathf.Clamp(targetLevel, 1, 5);
+        int pv = Mathf.Max(1, lv - 1);
+        bool first = lv <= 1;
+        // first pick: what the weapon does. Level-ups: only what improves (like Vampire Survivors).
+        string partner = type switch
+        {
+            WeaponType.NanoBlade => "\nEvolves with: Targeting Lens",
+            WeaponType.BioNeedler => "\nEvolves with: Genetic Extractor",
+            WeaponType.PlasmaBlaster => "\nEvolves with: Overclock Chip",
+            WeaponType.TeslaOrb => "\nEvolves with: Bio-Fuel Tank",
+            WeaponType.GravityGrenadier => "\nEvolves with: Graviton Capacitor",
+            _ => ""
+        };
+        return partner.Length == 0 ? "Upgrade Weapon" : WeaponCore(type, lv, pv, first) + partner;
+    }
+
+    private static string WeaponCore(WeaponType type, int lv, int pv, bool first)
+    {
+        string D(float a, float b, string f = "F0") => first ? b.ToString(f) : $"{a.ToString(f)} → {b.ToString(f)}";
         return type switch
         {
-            WeaponType.NanoBlade => $"Slash arc DMG {NanoBladeSlash.GetBaseDamage(targetLevel):F0}, Knockback {NanoBladeSlash.GetKnockbackDistance(targetLevel):F2}m, CD {NanoBladeSlash.GetBaseCooldown(targetLevel):F2}s (Tech: Targeting Lens)",
-            WeaponType.BioNeedler => $"Poison needle DMG {BioNeedlerWeapon.GetDirectDamage(targetLevel):F1}, Poison {BioNeedlerWeapon.GetPoisonDps(targetLevel):F1}/s, Pierce {BioNeedlerWeapon.GetPierceCount(targetLevel)} (Tech: Genetic Extractor)",
-            WeaponType.PlasmaBlaster => $"Auto-target plasma DMG {PlasmaBlasterWeapon.GetDamage(targetLevel):F0}, CD {PlasmaBlasterWeapon.GetBaseCooldown(targetLevel):F2}s (Tech: Overclock Chip)",
-            WeaponType.TeslaOrb => $"Orbiting electric orbs ({TeslaOrbWeapon.GetOrbCount(targetLevel)} orbs, radius {TeslaOrbWeapon.GetOrbitRadius(targetLevel):F2}m) DMG {TeslaOrbWeapon.GetDamage(targetLevel):F1} every 0.6s (Tech: Bio-Fuel Tank)",
-            WeaponType.GravityGrenadier => $"Black hole grenade DMG {GravityGrenadierWeapon.GetImpactDamage(targetLevel):F0}, Pull DoT {GravityGrenadierWeapon.GetPullDps(targetLevel):F0}/s, CD {GravityGrenadierWeapon.GetBaseCooldown(targetLevel):F2}s (Tech: Graviton Capacitor)",
+            WeaponType.NanoBlade => first
+                ? $"Sweeping slash, DMG {NanoBladeSlash.GetBaseDamage(1):F0}, Cooldown {NanoBladeSlash.GetBaseCooldown(1):F2}s"
+                : $"DMG {D(NanoBladeSlash.GetBaseDamage(pv), NanoBladeSlash.GetBaseDamage(lv))}, Cooldown {D(NanoBladeSlash.GetBaseCooldown(pv), NanoBladeSlash.GetBaseCooldown(lv), "F2")}s",
+            WeaponType.BioNeedler => first
+                ? $"Poison needle, DMG {BioNeedlerWeapon.GetDirectDamage(1):F1}, poison {BioNeedlerWeapon.GetPoisonDps(1):F1}/s, pierces {BioNeedlerWeapon.GetPierceCount(1)}"
+                : $"DMG {D(BioNeedlerWeapon.GetDirectDamage(pv), BioNeedlerWeapon.GetDirectDamage(lv), "F1")}, Poison {D(BioNeedlerWeapon.GetPoisonDps(pv), BioNeedlerWeapon.GetPoisonDps(lv), "F1")}/s",
+            WeaponType.PlasmaBlaster => first
+                ? $"Auto-target plasma, DMG {PlasmaBlasterWeapon.GetDamage(1):F0}, Cooldown {PlasmaBlasterWeapon.GetBaseCooldown(1):F2}s"
+                : $"DMG {D(PlasmaBlasterWeapon.GetDamage(pv), PlasmaBlasterWeapon.GetDamage(lv))}, Cooldown {D(PlasmaBlasterWeapon.GetBaseCooldown(pv), PlasmaBlasterWeapon.GetBaseCooldown(lv), "F2")}s",
+            WeaponType.TeslaOrb => first
+                ? $"{TeslaOrbWeapon.GetOrbCount(1)} orbiting electric orb, DMG {TeslaOrbWeapon.GetDamage(1):F1}"
+                : (TeslaOrbWeapon.GetOrbCount(pv) != TeslaOrbWeapon.GetOrbCount(lv) ? $"Orbs {TeslaOrbWeapon.GetOrbCount(pv)} → {TeslaOrbWeapon.GetOrbCount(lv)}, " : "") + $"DMG {D(TeslaOrbWeapon.GetDamage(pv), TeslaOrbWeapon.GetDamage(lv), "F1")}",
+            WeaponType.GravityGrenadier => first
+                ? $"Piercing gravity beam, DMG {GravityGrenadierWeapon.GetImpactDamage(1):F0}, Length {GravityGrenadierWeapon.GetBeamLength(1):F0}m"
+                : $"DMG {D(GravityGrenadierWeapon.GetImpactDamage(pv), GravityGrenadierWeapon.GetImpactDamage(lv))}, Length {D(GravityGrenadierWeapon.GetBeamLength(pv), GravityGrenadierWeapon.GetBeamLength(lv))}m",
             _ => "Upgrade Weapon"
         };
     }
 
     public static string GetTechUpgradeDescription(TechPassiveType type, int targetLevel)
     {
-        int clamped = Mathf.Clamp(targetLevel, 1, MaxTechLevel);
+        // gain of this one level only
         return type switch
         {
-            TechPassiveType.TargetingLens => $"Crit Rate +{clamped * 5}%, Crit Dmg +{clamped * 20}% (Max +25% / +100% | Evolves Nano-Blade)",
-            TechPassiveType.GeneticExtractor => $"Pickup Radius +{clamped * 25}%, RP Bonus +{clamped * 10}% (Max +125% / +50% | Evolves Bio-Needler)",
-            TechPassiveType.OverclockChip => $"Cooldown Reduction +{clamped * 8}% (Max +40%, Total Cap 60% | Evolves Plasma Blaster)",
-            TechPassiveType.BioFuelTank => $"Attack Area Size +{clamped * 10}% (Max +50% | Evolves Tesla Orb)",
-            TechPassiveType.GravitonCapacitor => $"Move Speed +{clamped * 8}% (Max +40% | Evolves Gravity Grenadier)",
+            TechPassiveType.TargetingLens => "Crit Rate +5%, Crit Dmg +20%\nEvolves: Nano-Blade",
+            TechPassiveType.GeneticExtractor => "Pickup Radius +25%, RP Bonus +10%\nEvolves: Bio-Needler",
+            TechPassiveType.OverclockChip => "Cooldown -8%\nEvolves: Plasma Blaster",
+            TechPassiveType.BioFuelTank => "Attack Area +10%\nEvolves: Tesla Orb",
+            TechPassiveType.GravitonCapacitor => "Move Speed +8%\nEvolves: Gravity Grenadier",
             _ => "Upgrade Tech Passive"
         };
     }
@@ -1457,11 +1518,11 @@ public class PlayerInventory : MonoBehaviour
         {
             return type switch
             {
-                BoonItemType.NanoBarrier => "Resonance: Blade Shield Matrix (ทำงานร่วมกับ Nano-Blade Evolved)",
-                BoonItemType.ToxicSpore => "Resonance: Epidemic Outbreak (ทำงานร่วมกับ Bio-Needler Evolved)",
-                BoonItemType.FlameRing => "Resonance: Solar Core Ring (ทำงานร่วมกับ Plasma Blaster Evolved)",
-                BoonItemType.StaticAura => "Resonance: Thunderstorm Domain (ทำงานร่วมกับ Tesla Orb Evolved)",
-                BoonItemType.MagneticPulse => "Resonance: Event Horizon Void (ทำงานร่วมกับ Gravity Grenadier Evolved)",
+                BoonItemType.NanoBarrier => "Resonance: Blade Shield Matrix (works with Nano-Blade Evolved)",
+                BoonItemType.ToxicSpore => "Resonance: Epidemic Outbreak (works with Bio-Needler Evolved)",
+                BoonItemType.FlameRing => "Resonance: Solar Core Ring (works with Plasma Blaster Evolved)",
+                BoonItemType.StaticAura => "Resonance: Thunderstorm Domain (works with Tesla Orb Evolved)",
+                BoonItemType.MagneticPulse => "Resonance: Event Horizon Void (works with Gravity Grenadier Evolved)",
                 _ => "Resonant Boon Upgrade"
             };
         }
@@ -1469,20 +1530,20 @@ public class PlayerInventory : MonoBehaviour
         return type switch
         {
             BoonItemType.NanoBarrier => targetLevel == 1
-                ? "สร้างเกราะ 20 ฟื้นทุก 15 วินาที"
-                : "เกราะ 50 ฟื้นทุก 8 วินาที (Max)",
+                ? "Blocks 1 hit, recharges every 15s"
+                : "Blocks 2 hits, recharges every 8s",
             BoonItemType.ToxicSpore => targetLevel == 1
-                ? "หมอกสปอร์พิษ 15/s รัศมี 3m"
-                : "หมอกสปอร์พิษ 30/s รัศมี 5m + สโลว์ศัตรู 20% (Max)",
+                ? "Toxic spore mist 15/s, 3m radius"
+                : "Toxic spore mist 30/s, 5m radius + slows enemies 20%",
             BoonItemType.FlameRing => targetLevel == 1
-                ? "วงแหวนไฟรอบตัวเผาผลาญ 25/s"
-                : "วงแหวนไฟ 50/s ขยายวงกว้าง 50% และลดเกราะศัตรู 15% (Max)",
+                ? "Ring of fire around you burns for 25/s"
+                : "Fire ring 50/s, 40% wider, reduces enemy armor 15%",
             BoonItemType.StaticAura => targetLevel == 1
-                ? "ผ่าสายฟ้า 1 ตัว ทุกระยะเดิน 5m (ดาเมจ 40)"
-                : "ผ่าสายฟ้า 3 ตัว ทุกระยะเดิน 4m (ดาเมจ 70) (Max)",
+                ? "Strikes 1 enemy every 5m walked (40 damage)"
+                : "Strikes 3 enemies every 4m walked (70 damage)",
             BoonItemType.MagneticPulse => targetLevel == 1
-                ? "ปล่อยพัลส์แม่เหล็กทุก 4 วินาที สโลว์ศัตรู 30%"
-                : "ปล่อยพัลส์ทุก 2 วินาที สโลว์ 50% สะท้อนกระสุน 30% (Max)",
+                ? "Magnetic pulse every 4s, slows enemies 30%\nRegenerates 0.1 HP/s"
+                : "Pulse every 2s, slows 50%, reflects 30% of bullets (destroys the rest)\nRegenerates 0.25 HP/s",
             _ => "Upgrade Boon"
         };
     }
@@ -1543,7 +1604,7 @@ public class PlayerInventory : MonoBehaviour
 
         int aegisLv = GetBoonLevel(BoonItemType.NaniteAegis);
         float boonArmor = aegisLv == 1 ? 8f : (aegisLv >= 2 ? 15f : 0f);
-        float boonHPRegen = aegisLv == 1 ? 1.0f : (aegisLv >= 2 ? 1.5f : 0f);
+        float boonHPRegen = aegisLv == 1 ? 0.1f : (aegisLv >= 2 ? 0.25f : 0f);
 
         stats.SetBoonBonuses(
             boonAtkSpeed,

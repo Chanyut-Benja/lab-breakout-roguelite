@@ -175,6 +175,9 @@ public class LevelUpManager : MonoBehaviour
             {
                 if (pool[i] != null && !banishedItemIds.Contains(pool[i].Id))
                 {
+                    // Balance Section 7: ห้ามมี Boon ปรากฏในหน้าต่าง Level Up (Boons รับได้จากประตูกับร้านค้าเท่านั้น)
+                    if (!isFromDoor && !isFromShop && pool[i].category == UpgradeCategory.Boon) continue;
+
                     result.Add(pool[i]);
                     if (result.Count >= count) break;
                 }
@@ -218,6 +221,9 @@ public class LevelUpManager : MonoBehaviour
                         !banishedItemIds.Contains(pool[i].Id) &&
                         !currentOfferedUpgrades.Exists(c => c != null && c.Id == pool[i].Id))
                     {
+                        // ห้ามมี Boon ใน Level Up
+                        if (!isFromDoor && !isFromShop && pool[i].category == UpgradeCategory.Boon) continue;
+
                         replacement = pool[i];
                         break;
                     }
@@ -297,6 +303,36 @@ public class LevelUpManager : MonoBehaviour
 
         isBanishModeActive = !isBanishModeActive;
         UpdateTokenButtonsUI();
+    }
+
+    private float panelClosedTimer;
+    // safety net: keeps the game frozen while the level-up window is open, shows queued level-ups that got stuck,
+    // and clears a "selecting" state whose window was closed by something else (game kept running without a pause)
+    private void Update()
+    {
+        bool panelOpen = levelUpPanel != null && levelUpPanel.activeInHierarchy;
+        if (isSelecting)
+        {
+            if (panelOpen)
+            {
+                panelClosedTimer = 0f;
+                if (Time.timeScale > 0f) Time.timeScale = 0f;
+            }
+            else if (!isFromDoor && !isFromShop)
+            {
+                panelClosedTimer += Time.unscaledDeltaTime;
+                if (panelClosedTimer > 0.5f)
+                {
+                    panelClosedTimer = 0f;
+                    isSelecting = false;
+                }
+            }
+        }
+        else
+        {
+            panelClosedTimer = 0f;
+            if (pendingLevels.Count > 0 && Time.timeScale > 0f) ShowNextLevelUp();
+        }
     }
 
     private void UpdateTokenButtonsUI()
@@ -1166,6 +1202,7 @@ public class UpgradeManager : MonoBehaviour
 
     /// <summary>
     /// สุ่มการ์ดอัปเกรดโดยกรอง (Filter) ข้ามไอเทมที่มี ID อยู่ใน banishedItemIds ออกจากตัวเลือกทั้งหมดตลอดรันนี้
+    /// และห้ามมี Boon ปรากฏในหน้าต่าง Level Up โดยเด็ดขาด (Balance Section 7)
     /// </summary>
     public List<LevelUpUpgradeData> GetRandomUpgrades(int count = 3)
     {
@@ -1176,7 +1213,7 @@ public class UpgradeManager : MonoBehaviour
             List<LevelUpUpgradeData> pool = inv.GenerateWeightedLevelUpCards(count + banishedItemIds.Count + 4);
             for (int i = 0; i < pool.Count; i++)
             {
-                if (pool[i] != null && !banishedItemIds.Contains(pool[i].Id))
+                if (pool[i] != null && !banishedItemIds.Contains(pool[i].Id) && pool[i].category != UpgradeCategory.Boon)
                 {
                     result.Add(pool[i]);
                     if (result.Count >= count) break;
@@ -1219,25 +1256,18 @@ public class UpgradeManager : MonoBehaviour
         }
         else
         {
-            // ลองสุ่มจาก Level Up การ์ดปกติก่อน
+            // สุ่มจาก Level Up การ์ดปกติ (Weapons & Techs เท่านั้น ห้ามมี Boon ปรากฏใน Level Up เด็ดขาด)
             List<LevelUpUpgradeData> standardCards = inv.GenerateWeightedLevelUpCards(10);
             for (int i = 0; i < standardCards.Count; i++)
             {
-                if (standardCards[i] != null && !excludedIds.Contains(standardCards[i].Id))
+                if (standardCards[i] != null && !excludedIds.Contains(standardCards[i].Id) && standardCards[i].category != UpgradeCategory.Boon)
                 {
                     return standardCards[i];
                 }
             }
 
-            // ถ้าไม่มีแล้ว ให้ลองสุ่มจาก Boon
-            List<LevelUpUpgradeData> fallbackBoons = inv.GenerateWeightedBoonCards(10);
-            for (int i = 0; i < fallbackBoons.Count; i++)
-            {
-                if (fallbackBoons[i] != null && !excludedIds.Contains(fallbackBoons[i].Id))
-                {
-                    return fallbackBoons[i];
-                }
-            }
+            // ห้าม fallback เป็น Boon ในหน้าต่าง Level Up เด็ดขาด! (Boons รับได้จากประตูกับร้านค้าเท่านั้น)
+            return null;
         }
 
         return null;

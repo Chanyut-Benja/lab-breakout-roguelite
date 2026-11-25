@@ -17,11 +17,11 @@ public static class EvolvedWeaponBehaviors
     {
         return evolvedType switch
         {
-            EvolvedWeaponType.ExecutionerMatrix => 0.50f,   // ซิกแซกตัดทะลุทั้งจอ ทุก 0.5s
+            EvolvedWeaponType.ExecutionerMatrix => 0.90f,   // slower, bigger waves (was 0.50); ซิกแซกตัดทะลุทั้งจอ ทุก 0.5s
             EvolvedWeaponType.PlagueSporeSpreader => 0.90f, // ปล่อยแคปซูลเมฆพิษค้างบนพื้นต่อเนื่อง
             EvolvedWeaponType.SupernovaCannon => 0.20f,     // ทำงานต่อเนื่องตลอดเวลาผ่าน SupernovaBeamController
             EvolvedWeaponType.StormCitadel => 0.1667f,      // ฟ้าผ่าสุ่มทั่วจอ 6 ครั้ง/วินาที (1 / 6 = 0.1667s)
-            EvolvedWeaponType.SingularityCannon => 4.00f,   // ยิงลำแสงผลักรวมจุดเดียว ระเบิด 1,200 ทุก 4s
+            EvolvedWeaponType.SingularityCannon => 3.00f,   // ยิงลำแสงผลักรวมจุดเดียว ระเบิด 1,200 ทุก 4s
             _ => 0.50f
         };
     }
@@ -63,11 +63,12 @@ public static class EvolvedWeaponBehaviors
     {
         if (attacker == null) return;
 
-        GameObject matrixObj = new GameObject("ExecutionerMatrix_ZigZagBlade");
-        matrixObj.transform.position = attacker.position;
-
-        ExecutionerMatrixProjectile proj = matrixObj.AddComponent<ExecutionerMatrixProjectile>();
-        proj.Initialize(attacker.position, initialDirection, 130f);
+        // Two-way slash: one crescent wave along the aim direction and one the opposite way. Each cuts through everything (130, always crit).
+        Vector2 dir = initialDirection.sqrMagnitude > 0.0001f ? initialDirection.normalized : Vector2.right;
+        float area = PlayerStats.Instance != null ? PlayerStats.Instance.AreaSizeMultiplier : 1f;
+        Color c = new Color(0.75f, 0.98f, 1f, 1f);
+        BladeWave.Spawn(attacker.position, dir, 130f, 3.6f * area, 18f, 1.2f, c, true);
+        BladeWave.Spawn(attacker.position, -dir, 130f, 3.6f * area, 18f, 1.2f, c, true);
 
         if (AudioManager.Instance != null && AudioManager.Instance.shootSFX != null)
         {
@@ -84,21 +85,32 @@ public static class EvolvedWeaponBehaviors
         if (origin == null) return;
 
         Vector3 targetPos = origin.position + (Vector3)(aimDirection.normalized * 2.5f);
-        Transform nearestEnemy = PlasmaBlasterWeapon.FindNearestEnemy(origin.position, 14f);
+        Transform nearestEnemy = AimSettings.MouseAim ? null : PlasmaBlasterWeapon.FindNearestEnemy(origin.position, 14f);
+        if (AimSettings.MouseAim)
+        {
+            Vector2 m = AimSettings.MouseWorld(origin.position);
+            Vector2 d = m - (Vector2)origin.position;
+            if (d.magnitude > 14f) m = (Vector2)origin.position + d.normalized * 14f;
+            targetPos = m;
+        }
         if (nearestEnemy != null)
         {
             targetPos = nearestEnemy.position;
         }
 
-        GameObject cloudObj = new GameObject("PlagueSporeSpreader_Cloud");
-        cloudObj.transform.position = targetPos;
-
-        PlagueSporeCloudZone cloud = cloudObj.AddComponent<PlagueSporeCloudZone>();
+        // Fire a spore capsule (like a Bio-Needler dart); it bursts into the poison cloud where it lands.
         float areaMult = PlayerStats.Instance != null ? PlayerStats.Instance.AreaSizeMultiplier : 1f;
-        cloud.Initialize(80f, 3.8f * areaMult, 3.5f);
-
-        // ดูด EXP Crystal ทั้งหมดเข้าหาตัวผู้เล่นอัตโนมัติตามสเปกหน้า 4
-        EXPCrystal.VacuumAllActiveCrystals();
+        GameObject capsuleObj = new GameObject("PlagueSpore_Capsule");
+        capsuleObj.transform.position = origin.position;
+        capsuleObj.transform.localScale = new Vector3(1.3f * areaMult, 0.5f * areaMult, 1f);
+        SpriteRenderer csr = capsuleObj.AddComponent<SpriteRenderer>();
+        ProceduralSprites.EnsureVisible(csr, ProceduralSprites.Shot);
+        csr.sprite = ProceduralSprites.Shot;
+        csr.color = new Color(0.45f, 1f, 0.35f, 1f);
+        csr.sortingOrder = 14;
+        ProjectileFx.Decorate(capsuleObj, new Color(0.45f, 1f, 0.35f, 1f), 2.4f, 0.18f, 0.2f);
+        PlagueSporeCapsule capsule = capsuleObj.AddComponent<PlagueSporeCapsule>();
+        capsule.Launch(nearestEnemy, targetPos, 3.8f * areaMult);
 
         if (AudioManager.Instance != null && AudioManager.Instance.shootSFX != null)
         {
@@ -112,28 +124,9 @@ public static class EvolvedWeaponBehaviors
     // ====================================================================================================
     public static void FireSingularityCannon(Transform attacker, Vector2 aimDirection)
     {
+        // Evolved Gravity: a small black hole is thrown at the nearest enemy (or along the aim) and pulls everything in.
         if (attacker == null) return;
-
-        Vector2 dir = aimDirection.sqrMagnitude > 0.0001f ? aimDirection.normalized : Vector2.right;
-        Vector3 collapsePoint = attacker.position + (Vector3)(dir * 4.5f);
-
-        Transform nearestEnemy = PlasmaBlasterWeapon.FindNearestEnemy(attacker.position, 16f);
-        if (nearestEnemy != null)
-        {
-            collapsePoint = nearestEnemy.position;
-        }
-
-        GameObject singularityObj = new GameObject("SingularityCannon_BeamCollapse");
-        singularityObj.transform.position = collapsePoint;
-
-        SingularityCannonCollapse collapse = singularityObj.AddComponent<SingularityCannonCollapse>();
-        float areaMult = PlayerStats.Instance != null ? PlayerStats.Instance.AreaSizeMultiplier : 1f;
-        collapse.Initialize(attacker.position, collapsePoint, 1200f, 7.5f * areaMult);
-
-        if (AudioManager.Instance != null && AudioManager.Instance.shootSFX != null)
-        {
-            AudioManager.Instance.PlaySFX(AudioManager.Instance.shootSFX);
-        }
+        GravityGrenadierWeapon.Fire(attacker, aimDirection, 5, true);
     }
 
     // ====================================================================================================
@@ -204,107 +197,54 @@ public static class EvolvedWeaponBehaviors
 }
 
 /// <summary>
-/// 1. Executioner Matrix: คลื่นใบมีดซิกแซกตัดทะลุศัตรูทั้งจอ ดาเมจ 130 และติด Critical 100% ทุกฮิต
+/// Plague Spore capsule: flies to the target like a dart, then bursts into a lingering poison cloud.
 /// </summary>
-public class ExecutionerMatrixProjectile : MonoBehaviour
+public class PlagueSporeCapsule : MonoBehaviour
 {
-    private readonly List<Vector3> waypoints = new List<Vector3>();
-    private int currentWaypointIndex = 0;
-    private float baseDamage = 130f;
-    private float speed = 34f;
-    private float hitRadius = 1.35f;
-    private SpriteRenderer spriteRenderer;
-    private readonly HashSet<GameObject> slicedEnemies = new HashSet<GameObject>();
+    private Transform targetEnemy;
+    private Vector3 targetPoint;
+    private float cloudRadius = 3.8f;
+    private float speed = 22f;
+    private float life = 2.0f;
+    private bool exploded;
 
-    public void Initialize(Vector3 startPos, Vector2 fallbackDir, float dmg = 130f)
+    public void Launch(Transform enemy, Vector3 fallbackPoint, float radius)
     {
-        baseDamage = dmg;
-        float areaMult = PlayerStats.Instance != null ? PlayerStats.Instance.AreaSizeMultiplier : 1f;
-        hitRadius = 1.35f * areaMult;
-
-        spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
-        ProceduralSprites.EnsureVisible(spriteRenderer, ProceduralSprites.NanoSlash);
-        spriteRenderer.sprite = ProceduralSprites.NanoSlash;
-        spriteRenderer.color = new Color(0.75f, 0.98f, 1f, 1f);
-        spriteRenderer.sortingOrder = 18;
-        transform.localScale = new Vector3(2.8f * areaMult, 2.2f * areaMult, 1f);
-
-        BuildZigZagWaypoints(startPos, fallbackDir);
-
-        // ทำดาเมจตัดทะลุศัตรูทุกตัวในหน้าจอทันที + วิ่งซิกแซกผ่านจุดเป้าหมาย
-        List<GameObject> screenEnemies = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(startPos, 18f);
-        for (int i = 0; i < screenEnemies.Count; i++)
-        {
-            GameObject enemy = screenEnemies[i];
-            if (enemy != null && !slicedEnemies.Contains(enemy))
-            {
-                slicedEnemies.Add(enemy);
-                // Dmg 130 + คริติคอล 100% (forceGuaranteedCrit = true)
-                EvolvedWeaponBehaviors.DealEvolvedDamageToEnemy(enemy, baseDamage, true);
-            }
-        }
-    }
-
-    private void BuildZigZagWaypoints(Vector3 startPos, Vector2 fallbackDir)
-    {
-        waypoints.Clear();
-        List<GameObject> enemies = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(startPos, 16f);
-
-        if (enemies.Count > 0)
-        {
-            int maxBounce = Mathf.Min(enemies.Count, 8);
-            for (int i = 0; i < maxBounce; i++)
-            {
-                if (enemies[i] != null)
-                {
-                    waypoints.Add(enemies[i].transform.position);
-                }
-            }
-        }
-        else
-        {
-            Vector2 dir = fallbackDir.sqrMagnitude > 0.001f ? fallbackDir.normalized : Vector2.right;
-            Vector2 perp = new Vector2(-dir.y, dir.x);
-            waypoints.Add(startPos + (Vector3)(dir * 3.5f + perp * 2.5f));
-            waypoints.Add(startPos + (Vector3)(dir * 7.0f - perp * 2.5f));
-            waypoints.Add(startPos + (Vector3)(dir * 10.5f + perp * 2.0f));
-        }
+        targetEnemy = enemy;
+        targetPoint = fallbackPoint;
+        cloudRadius = radius;
     }
 
     private void Update()
     {
-        if (currentWaypointIndex >= waypoints.Count)
+        if (exploded) return;
+        if (targetEnemy != null && targetEnemy.gameObject.activeInHierarchy) targetPoint = targetEnemy.position;
+
+        Vector3 to = targetPoint - transform.position;
+        float step = speed * Time.deltaTime;
+        if (to.magnitude <= step + 0.3f)
         {
-            Destroy(gameObject);
+            Explode();
             return;
         }
+        Vector3 dir = to.normalized;
+        transform.position += dir * step;
+        transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
 
-        Vector3 target = waypoints[currentWaypointIndex];
-        Vector2 toTarget = (Vector2)(target - transform.position);
-        if (toTarget.sqrMagnitude > 0.001f)
-        {
-            float angle = Mathf.Atan2(toTarget.y, toTarget.x) * Mathf.Rad2Deg;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
-        }
+        life -= Time.deltaTime;
+        if (life <= 0f) Explode();
+    }
 
-        transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
-
-        // เช็กศัตรูที่เกิดใหม่หรืออยู่ในเส้นทางซิกแซกเพิ่มเติม
-        List<GameObject> alongPath = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(transform.position, hitRadius);
-        for (int i = 0; i < alongPath.Count; i++)
-        {
-            GameObject enemy = alongPath[i];
-            if (enemy != null && !slicedEnemies.Contains(enemy))
-            {
-                slicedEnemies.Add(enemy);
-                EvolvedWeaponBehaviors.DealEvolvedDamageToEnemy(enemy, baseDamage, true);
-            }
-        }
-
-        if (Vector2.Distance(transform.position, target) <= 0.25f)
-        {
-            currentWaypointIndex++;
-        }
+    private void Explode()
+    {
+        exploded = true;
+        GameObject cloudObj = new GameObject("PlagueSporeSpreader_Cloud");
+        cloudObj.transform.position = transform.position;
+        PlagueSporeCloudZone cloud = cloudObj.AddComponent<PlagueSporeCloudZone>();
+        cloud.Initialize(80f, cloudRadius, 3.5f);
+        PoisonSmoke.Burst(transform.position, cloudRadius, 16, 1.0f);
+        EXPCrystal.VacuumAllActiveCrystals();
+        Destroy(gameObject);
     }
 }
 
@@ -326,19 +266,38 @@ public class PlagueSporeCloudZone : MonoBehaviour
         radius = cloudRadius;
         duration = cloudDuration;
 
-        spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
-        ProceduralSprites.EnsureVisible(spriteRenderer, ProceduralSprites.Shot);
-        spriteRenderer.sprite = ProceduralSprites.Shot;
-        spriteRenderer.color = new Color(0.20f, 0.95f, 0.35f, 0.52f);
+        // soft round smoke instead of the old bar-shaped sprite
+        GameObject baseGo = new GameObject("CloudBase");
+        baseGo.transform.SetParent(transform, false);
+        baseGo.transform.localScale = Vector3.one * (radius * 2.1f);
+        spriteRenderer = baseGo.AddComponent<SpriteRenderer>();
+        ProceduralSprites.EnsureVisible(spriteRenderer, WeaponVfx.Glow);
+        spriteRenderer.sprite = WeaponVfx.Glow;
+        spriteRenderer.color = new Color(0.45f, 0.95f, 0.40f, 0.38f);
         spriteRenderer.sortingOrder = 6;
-        transform.localScale = Vector3.one * (radius * 1.6f);
+        PoisonSmoke.Burst(transform.position, radius * 0.8f, 8, 1.2f);
     }
+
+    private float puffTimer;
 
     private void Update()
     {
         float dt = Time.deltaTime;
         elapsed += dt;
         tickAccumulator += dt;
+
+        puffTimer += dt;
+        if (puffTimer >= 0.22f && elapsed < duration - 0.5f)
+        {
+            puffTimer = 0f;
+            PoisonSmoke.Puff(transform.position + (Vector3)(Random.insideUnitCircle * radius * 0.7f), radius * 0.55f, 1.4f);
+        }
+        if (spriteRenderer != null)
+        {
+            Color bc = spriteRenderer.color;
+            bc.a = 0.38f * Mathf.Clamp01((duration - elapsed) / 0.8f);
+            spriteRenderer.color = bc;
+        }
 
         // ดูด EXP Gem ทั้งฉากเข้าหาตัวผู้เล่นอัตโนมัติอย่างต่อเนื่องขณะที่เมฆพิษทำงาน
         EXPCrystal.VacuumAllActiveCrystals();
@@ -371,14 +330,18 @@ public class PlagueSporeCloudZone : MonoBehaviour
 /// </summary>
 public class SupernovaBeamController : MonoBehaviour
 {
-    private const float RotationPeriodSeconds = 2.0f; // หมุนรอบละ 2 วินาที (360° / 2s = 180°/s)
+    private const int Spokes = 6;                     // six rays, 60 degrees apart
+    private const float RotationDegPerSec = 70f;      // slow spin of the whole star
+    private const float PulsePeriod = 2.4f;           // rays extend out, hold, then fold back in
     private const float DamagePerHit = 90f;
-    private const float BeamLength = 14f;
+    private const float BeamLength = 8.5f;
     private const float HitCooldownPerEnemy = 0.25f;
 
-    private GameObject beamVisualObj;
-    private SpriteRenderer beamRenderer;
-    private float currentAngleDeg = 0f;
+    private LineRenderer[] glow;
+    private LineRenderer[] core;
+    private GameObject root;
+    private float angleDeg;
+    private float pulseT;
     private readonly Dictionary<GameObject, float> enemyNextHitTime = new Dictionary<GameObject, float>();
 
     public static SupernovaBeamController EnsureActiveOnPlayer(Transform playerTransform)
@@ -396,26 +359,44 @@ public class SupernovaBeamController : MonoBehaviour
 
     private void Awake()
     {
-        CreateBeamVisual();
+        BuildVisual();
     }
 
-    private void CreateBeamVisual()
+    private LineRenderer NewLine(Transform parent, string n, float width, Color c, int order)
     {
-        if (beamVisualObj != null) return;
+        GameObject g = new GameObject(n);
+        g.transform.SetParent(parent, false);
+        LineRenderer lr = g.AddComponent<LineRenderer>();
+        lr.material = new Material(Shader.Find("Sprites/Default"));
+        lr.useWorldSpace = true;
+        lr.positionCount = 2;
+        lr.startWidth = width;
+        lr.endWidth = width * 0.55f;
+        lr.startColor = c;
+        lr.endColor = new Color(c.r, c.g, c.b, c.a * 0.55f);
+        lr.sortingOrder = order;
+        return lr;
+    }
 
-        beamVisualObj = new GameObject("SupernovaCannon_LaserBeam");
-        beamVisualObj.transform.SetParent(transform, false);
-
-        beamRenderer = beamVisualObj.AddComponent<SpriteRenderer>();
-        ProceduralSprites.EnsureVisible(beamRenderer, ProceduralSprites.Shot);
-        beamRenderer.sprite = ProceduralSprites.Shot;
-        beamRenderer.color = new Color(1f, 0.45f, 0.12f, 0.90f);
-        beamRenderer.sortingOrder = 17;
+    private void BuildVisual()
+    {
+        if (root != null) return;
+        root = new GameObject("SupernovaCannon_StarBeams");
+        root.transform.SetParent(transform, false);
+        glow = new LineRenderer[Spokes];
+        core = new LineRenderer[Spokes];
+        for (int i = 0; i < Spokes; i++)
+        {
+            glow[i] = NewLine(root.transform, "Glow" + i, 0.9f, new Color(1f, 0.5f, 0.12f, 0.45f), 16);
+            core[i] = NewLine(root.transform, "Core" + i, 0.32f, new Color(1f, 0.95f, 0.75f, 0.98f), 17);
+        }
     }
 
     private void Update()
     {
         if (Time.timeScale <= 0f) return;
+
+        if (AimSettings.CombatPaused) { if (root != null && root.activeSelf) root.SetActive(false); return; }
 
         PlayerInventory inv = PlayerInventory.GetOrCreate();
         WeaponSlotEntry plasmaSlot = inv != null ? inv.GetWeaponSlot(WeaponType.PlasmaBlaster) : null;
@@ -423,47 +404,57 @@ public class SupernovaBeamController : MonoBehaviour
 
         if (!shouldBeActive)
         {
-            if (beamVisualObj != null && beamVisualObj.activeSelf)
-                beamVisualObj.SetActive(false);
+            if (root != null && root.activeSelf) root.SetActive(false);
             return;
         }
 
-        if (beamVisualObj == null) CreateBeamVisual();
-        if (!beamVisualObj.activeSelf) beamVisualObj.SetActive(true);
+        if (root == null) BuildVisual();
+        if (!root.activeSelf) root.SetActive(true);
 
         float areaMult = PlayerStats.Instance != null ? PlayerStats.Instance.AreaSizeMultiplier : 1f;
-        float effectiveLength = BeamLength * areaMult;
-        float beamHalfWidth = 0.48f * areaMult;
+        float maxLen = BeamLength * areaMult;
+        float halfWidth = 0.4f * areaMult;
 
-        // หมุน 360 องศา รอบละ 2 วินาที (180 องศาต่อวินาที)
-        float angularSpeedDeg = 360f / RotationPeriodSeconds;
-        currentAngleDeg = (currentAngleDeg + angularSpeedDeg * Time.deltaTime) % 360f;
+        angleDeg = (angleDeg + RotationDegPerSec * Time.deltaTime) % 360f;
+        pulseT += Time.deltaTime;
+        // 0 -> 1 quickly (shoot out), hold near full, then fold back to 0 and pop out again
+        float ph = (pulseT % PulsePeriod) / PulsePeriod;
+        float env = ph < 0.25f ? Mathf.SmoothStep(0f, 1f, ph / 0.25f)
+                  : ph < 0.65f ? 1f
+                  : Mathf.SmoothStep(1f, 0f, (ph - 0.65f) / 0.35f);
+        float len = Mathf.Max(0.01f, maxLen * env);
 
-        float rad = currentAngleDeg * Mathf.Deg2Rad;
-        Vector2 beamDir = new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)).normalized;
-
-        // อัปเดตตำแหน่งและขนาดของลำแสงเลเซอร์
-        beamVisualObj.transform.position = transform.position + (Vector3)(beamDir * (effectiveLength * 0.5f));
-        beamVisualObj.transform.rotation = Quaternion.Euler(0f, 0f, currentAngleDeg);
-        beamVisualObj.transform.localScale = new Vector3(effectiveLength, beamHalfWidth * 2.2f, 1f);
-
-        // ตรวจจับศัตรูที่ถูกลำแสงเลเซอร์กวาดผ่าน (Dmg 90/hit)
-        RaycastHit2D[] hits = Physics2D.CircleCastAll(transform.position, beamHalfWidth, beamDir, effectiveLength);
-        for (int i = 0; i < hits.Length; i++)
+        Vector2 origin = transform.position;
+        for (int i = 0; i < Spokes; i++)
         {
-            Collider2D col = hits[i].collider;
-            if (col == null || col.CompareTag("Player")) continue;
+            float a = (angleDeg + i * (360f / Spokes)) * Mathf.Deg2Rad;
+            Vector2 d = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+            Vector3 end = origin + d * len;
+            glow[i].SetPosition(0, origin); glow[i].SetPosition(1, end);
+            core[i].SetPosition(0, origin); core[i].SetPosition(1, end);
+            glow[i].widthMultiplier = core[i].widthMultiplier = 0.4f + 0.6f * env;
+        }
 
-            GameObject targetObj = col.attachedRigidbody != null ? col.attachedRigidbody.gameObject : col.gameObject;
-            if (targetObj == null || !targetObj.activeInHierarchy || targetObj.CompareTag("Player")) continue;
+        if (env < 0.12f) return;   // folded in: no damage
 
-            if (enemyNextHitTime.TryGetValue(targetObj, out float nextAllowed) && Time.time < nextAllowed)
-                continue;
+        List<GameObject> near = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(origin, len + halfWidth + 1f);
+        for (int n = 0; n < near.Count; n++)
+        {
+            GameObject targetObj = near[n];
+            if (targetObj == null || !targetObj.activeInHierarchy) continue;
+            if (enemyNextHitTime.TryGetValue(targetObj, out float nextAllowed) && Time.time < nextAllowed) continue;
 
-            IDamageable dmg = targetObj.GetComponent<IDamageable>() ?? col.GetComponent<IDamageable>() ?? targetObj.GetComponentInChildren<IDamageable>();
-            EnemyAI ai = targetObj.GetComponent<EnemyAI>() ?? col.GetComponent<EnemyAI>();
-            if (!targetObj.CompareTag("Enemy") && dmg == null && ai == null)
-                continue;
+            Vector2 rel = (Vector2)targetObj.transform.position - origin;
+            bool hit = false;
+            for (int i = 0; i < Spokes && !hit; i++)
+            {
+                float a = (angleDeg + i * (360f / Spokes)) * Mathf.Deg2Rad;
+                Vector2 d = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+                float along = Vector2.Dot(rel, d);
+                float perp = Mathf.Abs(rel.x * d.y - rel.y * d.x);
+                hit = along > -0.3f && along < len + 0.3f && perp < halfWidth + 0.35f;
+            }
+            if (!hit) continue;
 
             enemyNextHitTime[targetObj] = Time.time + HitCooldownPerEnemy;
             EvolvedWeaponBehaviors.DealEvolvedDamageToEnemy(targetObj, DamagePerHit, false);
@@ -477,11 +468,13 @@ public class SupernovaBeamController : MonoBehaviour
 /// </summary>
 public class StormCitadelController : MonoBehaviour
 {
-    private const float StrikesPerSecond = 6f;
-    private const float StrikeInterval = 1f / StrikesPerSecond; // 0.1667 วินาที (6 ครั้ง/วินาที)
-    private const float StrikeDamage = 60f;
-    private const float ScreenStrikeRadius = 15f;
+    private const float StrikesPerSecond = 3f;
+    private const float StrikeInterval = 1f / StrikesPerSecond; // 3 strikes per second (nerfed from 6)
+    private const float StrikeDamage = 45f;
+    private const float ScreenStrikeRadius = 11f;
 
+    // Storm Citadel is now the orbiting-orbs evolution (TeslaOrbWeapon); the random sky strikes are switched off.
+    private static readonly bool StrikesEnabled = false;
     private float strikeTimer = 0f;
 
     public static StormCitadelController EnsureActiveOnPlayer(Transform playerTransform)
@@ -499,7 +492,10 @@ public class StormCitadelController : MonoBehaviour
 
     private void Update()
     {
+        if (!StrikesEnabled) return;
         if (Time.timeScale <= 0f) return;
+
+        if (AimSettings.CombatPaused) return;
 
         PlayerInventory inv = PlayerInventory.GetOrCreate();
         WeaponSlotEntry teslaSlot = inv != null ? inv.GetWeaponSlot(WeaponType.TeslaOrb) : null;
@@ -526,7 +522,7 @@ public class StormCitadelController : MonoBehaviour
             EvolvedWeaponBehaviors.DealEvolvedDamageToEnemy(chosen, StrikeDamage, false);
 
             // ช็อตศัตรูข้างเคียงในจุดที่สายฟ้าลงระยะ 1.2m
-            List<GameObject> splash = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(strikePos, 1.2f * areaMult);
+            List<GameObject> splash = EvolvedWeaponBehaviors.GetActiveEnemiesInRadius(strikePos, 1.0f * areaMult);
             for (int i = 0; i < splash.Count; i++)
             {
                 if (splash[i] != null && splash[i] != chosen)
@@ -546,17 +542,9 @@ public class StormCitadelController : MonoBehaviour
 
     private static void SpawnLightningBoltVisual(Vector3 pos, float areaMult)
     {
-        GameObject boltObj = new GameObject("StormCitadel_LightningStrike");
-        boltObj.transform.position = pos;
-        boltObj.transform.localScale = new Vector3(0.55f * areaMult, 2.8f * areaMult, 1f);
-
-        SpriteRenderer sr = boltObj.AddComponent<SpriteRenderer>();
-        ProceduralSprites.EnsureVisible(sr, ProceduralSprites.Shot);
-        sr.sprite = ProceduralSprites.Shot;
-        sr.color = new Color(0.45f, 0.92f, 1f, 0.95f);
-        sr.sortingOrder = 19;
-
-        Object.Destroy(boltObj, 0.12f);
+        Vector2 top = new Vector2(pos.x + Random.Range(-0.6f, 0.6f), pos.y + 6f);
+        WeaponVfx.Lightning(top, pos, new Color(0.6f, 0.95f, 1f, 1f), 0.16f, 0.14f, 1);
+        WeaponVfx.Flash(pos, new Color(0.7f, 1f, 1f, 0.9f), 1.3f * areaMult, 0.14f);
     }
 }
 

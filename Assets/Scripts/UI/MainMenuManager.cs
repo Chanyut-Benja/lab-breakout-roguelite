@@ -126,6 +126,10 @@ public class MainMenuManager : MonoBehaviour
             Transform titleTrans = mainPanel.transform.Find("TitleText");
             if (titleTrans != null)
             {
+                // game logo image replaces the plain title text
+                GameObject logoGo = SkinLibrary.AddLogo(mainPanel.transform, new Vector2(0.73f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -80f), new Vector2(950f, 390f));
+                if (logoGo != null) titleTrans.gameObject.SetActive(false);
+                SkinLibrary.AddBackground(mainPanel.transform, 0.5f);   // cover art behind everything
                 RectTransform tRect = titleTrans.GetComponent<RectTransform>();
                 if (tRect != null)
                 {
@@ -245,7 +249,7 @@ public class MainMenuManager : MonoBehaviour
         if (playButton != null)
         {
             playButton.gameObject.SetActive(true);
-            StyleMenuButton(playButton, "PLAY", new Vector2(0f, 35f), font);
+            StyleMenuButton(playButton, "PLAY", new Vector2(0f, 0f), font, PixelButtonSkin.Style.Orange);
             playButton.onClick.RemoveAllListeners();
             playButton.onClick.AddListener(StartRun);
         }
@@ -254,7 +258,7 @@ public class MainMenuManager : MonoBehaviour
         if (researchLabButton != null)
         {
             researchLabButton.gameObject.SetActive(true);
-            StyleMenuButton(researchLabButton, "SKILL TREE", new Vector2(0f, -50f), font);
+            StyleMenuButton(researchLabButton, "SKILL TREE", new Vector2(0f, -125f), font, PixelButtonSkin.Style.Blue);
             researchLabButton.onClick.RemoveAllListeners();
             researchLabButton.onClick.AddListener(OpenResearchLab);
         }
@@ -263,22 +267,64 @@ public class MainMenuManager : MonoBehaviour
         if (quitButton != null)
         {
             quitButton.gameObject.SetActive(true);
-            StyleMenuButton(quitButton, "QUIT", new Vector2(0f, -135f), font);
+            // ในโหมดเล่นมีปุ่ม SETTINGS แทรกก่อน QUIT จึงเลื่อน QUIT ลงอีกหนึ่งช่อง
+            StyleMenuButton(quitButton, "QUIT", new Vector2(0f, -375f), font, PixelButtonSkin.Style.Grey);
             quitButton.onClick.RemoveAllListeners();
             quitButton.onClick.AddListener(QuitGame);
+
+            // Button 3.5: SETTINGS (สร้างจากปุ่ม QUIT)
+            {
+                Transform existing = quitButton.transform.parent.Find("SettingsButton");
+                Button settingsBtn = existing != null ? existing.GetComponent<Button>() : null;
+                if (settingsBtn == null)
+                {
+                    GameObject clone = Instantiate(quitButton.gameObject, quitButton.transform.parent);
+                    clone.name = "SettingsButton";
+                    settingsBtn = clone.GetComponent<Button>();
+                }
+                settingsBtn.gameObject.SetActive(true);
+                settingsBtn.onClick = new Button.ButtonClickedEvent();   // ล้าง listener ที่ติดมากับ QUIT
+                StyleMenuButton(settingsBtn, "SETTINGS", new Vector2(0f, -250f), font, PixelButtonSkin.Style.Teal);
+                settingsBtn.onClick.AddListener(SettingsMenu.Open);
+            }
+
+            // Button 3.6: HOW TO PLAY (cloned from QUIT, sits between SETTINGS and QUIT)
+            {
+                Transform existingH = quitButton.transform.parent.Find("HowToPlayButton");
+                Button howBtn = existingH != null ? existingH.GetComponent<Button>() : null;
+                if (howBtn == null)
+                {
+                    GameObject cloneH = Instantiate(quitButton.gameObject, quitButton.transform.parent);
+                    cloneH.name = "HowToPlayButton";
+                    howBtn = cloneH.GetComponent<Button>();
+                }
+                howBtn.gameObject.SetActive(true);
+                howBtn.onClick = new Button.ButtonClickedEvent();
+                StyleMenuButton(howBtn, "HOW TO PLAY", Vector2.zero, font, PixelButtonSkin.Style.Blue);
+                // bottom-right corner of the screen
+                RectTransform howRt = howBtn.GetComponent<RectTransform>();
+                if (howRt != null)
+                {
+                    howRt.anchorMin = howRt.anchorMax = new Vector2(1f, 0f);
+                    howRt.pivot = new Vector2(1f, 0f);
+                    howRt.anchoredPosition = new Vector2(-40f, 40f);
+                    howRt.sizeDelta = new Vector2(320f, 64f);
+                }
+                howBtn.onClick.AddListener(HowToPlayMenu.Open);
+            }
         }
     }
 
-    private void StyleMenuButton(Button btn, string label, Vector2 anchoredPos, Font font)
+    private void StyleMenuButton(Button btn, string label, Vector2 anchoredPos, Font font, PixelButtonSkin.Style skin = PixelButtonSkin.Style.Orange)
     {
         RectTransform rt = btn.GetComponent<RectTransform>();
         if (rt != null)
         {
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.anchorMin = new Vector2(0.73f, 0.5f);   // menu column on the right
+            rt.anchorMax = new Vector2(0.73f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.anchoredPosition = anchoredPos;
-            rt.sizeDelta = new Vector2(420f, 65f); // กว้าง 420px สูง 65px
+            rt.sizeDelta = new Vector2(460f, 74f); // กว้าง 420px สูง 65px
             rt.localScale = Vector3.one;
         }
 
@@ -290,10 +336,12 @@ public class MainMenuManager : MonoBehaviour
             btnImg.sprite = null;
         }
 
-        // Neon Cyan Border Outline (2.5px)
+        if (btnImg != null) btnImg.color = new Color(0.13f, 0.11f, 0.17f, 0.94f);   // dark plum, matches the cover art
+
+        // warm orange border, matches the logo
         Outline outline = btn.GetComponent<Outline>();
         if (outline == null) outline = btn.gameObject.AddComponent<Outline>();
-        outline.effectColor = BtnBorderCyan;
+        outline.effectColor = new Color(0.86f, 0.36f, 0.14f, 1f);
         outline.effectDistance = new Vector2(2.5f, -2.5f);
 
         // Smooth Hover Animation (1.05x)
@@ -303,9 +351,9 @@ public class MainMenuManager : MonoBehaviour
         }
 
         var colors = btn.colors;
-        colors.normalColor = PureDarkBlack;
-        colors.highlightedColor = BtnHighlight;
-        colors.pressedColor = BtnPressed;
+        colors.normalColor = Color.white;   // the Image colour above is the real button colour
+        colors.highlightedColor = new Color(1f, 0.85f, 0.75f, 1f);
+        colors.pressedColor = new Color(0.7f, 0.65f, 0.65f, 1f);
         colors.disabledColor = new Color(0.15f, 0.2f, 0.25f, 0.5f);
         colors.colorMultiplier = 1f;
         btn.colors = colors;
@@ -327,15 +375,24 @@ public class MainMenuManager : MonoBehaviour
             shadow.effectColor = new Color(0f, 0f, 0f, 0.95f);
             shadow.effectDistance = new Vector2(2f, -2f);
         }
+
+        PixelButtonSkin.Apply(btn, skin);   // ปุ่มพิกเซล 4 สี (ลบกรอบเดิมทิ้ง)
     }
 
     public void UpdateRPDisplay()
     {
         int rp = SaveSystem.GetResearchPoints();
 
+        if (rpAmountText == null)
+        {
+            GameObject rpObj = GameObject.Find("RPText");
+            if (rpObj == null) rpObj = GameObject.Find("RPAmountText");
+            if (rpObj != null) rpAmountText = rpObj.GetComponent<Text>();
+        }
         if (rpAmountText != null)
         {
             rpAmountText.text = $"RESEARCH POINTS: {rp} RP";
+            rpAmountText.gameObject.SetActive(false);   // RP is shown only inside the skill tree screen
         }
     }
 
@@ -594,8 +651,24 @@ public class MainMenuManager : MonoBehaviour
         }
     }
 
-    public void OpenResearchLab()
+    /// <summary>Hides a freshly opened panel for a few frames so the pixel theme is applied before the player sees it.</summary>
+    private System.Collections.IEnumerator RevealThemed(GameObject panel)
     {
+        if (panel == null) yield break;
+        CanvasGroup cg = panel.GetComponent<CanvasGroup>();
+        if (cg == null) cg = panel.AddComponent<CanvasGroup>();
+        cg.alpha = 0f;
+        for (int i = 0; i < 4; i++)
+        {
+            yield return null;
+            PixelPanelAuto.ApplyNow();
+            PixelFontAuto.ApplyNow();
+            PixelButtonAutoSkin.ApplyNow();
+        }
+        if (panel != null) cg.alpha = 1f;
+    }
+
+    public void OpenResearchLab()    {
         if (mainPanel != null) mainPanel.SetActive(false);
         if (characterSelectPanel != null) characterSelectPanel.SetActive(false);
         if (researchPanel != null)
@@ -627,8 +700,11 @@ public class MainMenuManager : MonoBehaviour
 
         if (researchPanel != null)
         {
-            foreach (ResearchNodeUI node in researchPanel.GetComponentsInChildren<ResearchNodeUI>(true))
-                node.RefreshUI();
+            if (ResearchTreeManager.UseCustomScreen) SkillTreeScreen.Show(researchPanel.transform);
+            PixelPanelAuto.ApplyNow();
+            PixelFontAuto.ApplyNow();
+            PixelButtonAutoSkin.ApplyNow();
+            StartCoroutine(RevealThemed(researchPanel));
         }
     }
 
@@ -644,10 +720,10 @@ public class MainMenuManager : MonoBehaviour
             RectTransform rt = backBtnTr.GetComponent<RectTransform>();
             if (rt != null)
             {
-                rt.anchorMin = new Vector2(0f, 0f);
-                rt.anchorMax = new Vector2(0f, 0f);
+                rt.anchorMin = new Vector2(1f, 0f);
+                rt.anchorMax = new Vector2(1f, 0f);
                 rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.anchoredPosition = new Vector2(120f, 60f); // AnchoredPosition (120, 60)
+                rt.anchoredPosition = new Vector2(-120f, 60f); // AnchoredPosition (120, 60)
                 rt.sizeDelta = new Vector2(180f, 55f);       // ขนาด 180px x 55px
             }
 
@@ -677,11 +753,15 @@ public class MainMenuManager : MonoBehaviour
         if (characterSelectPanel != null)
         {
             characterSelectPanel.SetActive(true);
+            PixelPanelAuto.ApplyNow();
+            PixelFontAuto.ApplyNow();
+            PixelButtonAutoSkin.ApplyNow();
             CharacterSelectUI selectUI = characterSelectPanel.GetComponent<CharacterSelectUI>();
             if (selectUI != null)
             {
                 selectUI.ApplyCyberLabCharacterSelectTheme();
             }
+            StartCoroutine(RevealThemed(characterSelectPanel));
         }
     }
 

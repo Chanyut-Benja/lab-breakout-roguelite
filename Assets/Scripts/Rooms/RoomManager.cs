@@ -13,10 +13,12 @@ public class RoomManager : MonoBehaviour
     [SerializeField] private int currentRoom = 1;
     [SerializeField] private int roomsPerFloor = 9; // 9 ห้องต่อ 1 Floor
     [SerializeField] private int totalFloors = 2;   // 2 Floor = 18 ห้องรวม
-    [SerializeField] private float roomDuration = 90f;
+    // Room length in seconds. The code value wins over whatever the scene has serialized (set to 90 for the final game).
+    public const float RoomSeconds = 90f;
+    [SerializeField] private float roomDuration = RoomSeconds;
 
     [Header("Containment Purge Settings")]
-    [SerializeField] private float purgeCountdownDuration = 15f;
+    private const float purgeCountdownDuration = 10f;
     [SerializeField] private float purgeHpDrainPerSecond = 0.05f; // ลดเลือดวินาทีละ 5% ของ Max HP
     [SerializeField] private float purgeGasExposureDuration = 1.0f;
 
@@ -99,16 +101,39 @@ public class RoomManager : MonoBehaviour
 
     private void Start()
     {
+        roomDuration = RoomSeconds;
         if (timerText != null)
         {
-            timerText.fontSize = 42;
+            timerText.fontSize = 34;
             timerText.color = Color.white;
+            MakeReadable(timerText);
             timerText.horizontalOverflow = HorizontalWrapMode.Overflow;
             timerText.verticalOverflow = VerticalWrapMode.Overflow;
         }
 
-        CreateBoundaryVisuals();
+        if (roomText != null)
+        {
+            roomText.color = new Color(0.75f, 0.95f, 1f);
+            MakeReadable(roomText);
+        }
+
+        // the walls are painted into each room map now (see RoomEnvironment); no extra strips needed
+        RoomEnvironment.Ensure();
         StartNewRoom();
+    }
+
+    // Dark outline + soft shadow so white/cyan text stays readable over any background.
+    private static void MakeReadable(Text t)
+    {
+        if (t == null) return;
+        Outline o = t.GetComponent<Outline>();
+        if (o == null) o = t.gameObject.AddComponent<Outline>();
+        o.effectColor = new Color(0f, 0f, 0f, 0.95f);
+        o.effectDistance = new Vector2(2f, -2f);
+        o.useGraphicAlpha = false;
+        t.resizeTextForBestFit = true;
+        t.resizeTextMaxSize = t.fontSize;
+        t.resizeTextMinSize = Mathf.Max(14, t.fontSize / 2);
     }
 
     private void CreateBoundaryVisuals()
@@ -149,9 +174,9 @@ public class RoomManager : MonoBehaviour
     private IEnumerator ShowBoundaryNoticeRoutine()
     {
         roomText.text = "MAP LIMIT  |  TURN BACK";
-        roomText.color = new Color(0.08f, 0.43f, 0.55f);
+        roomText.color = new Color(1f, 0.85f, 0.3f);
         yield return new WaitForSeconds(1.3f);
-        roomText.color = new Color(0.08f, 0.16f, 0.23f);
+        roomText.color = new Color(0.75f, 0.95f, 1f);
         UpdateRoomUI();
         boundaryNotice = null;
     }
@@ -172,10 +197,17 @@ public class RoomManager : MonoBehaviour
 
         UpdateRoomUI();
 
-        if (playerSpawnPoint != null)
+        // load the separate map for this room (floor picture, walls, doorways), then place the player at its entrance
+        RoomEnvironment roomEnv = RoomEnvironment.Ensure();
+        roomEnv.LoadRoom(currentRoom);
         {
             GameObject player = GameObject.FindWithTag("Player");
-            if (player != null) player.transform.position = playerSpawnPoint.position;
+            if (player != null)
+            {
+                player.transform.position = roomEnv.PlayerSpawn;
+                Rigidbody2D playerBody = player.GetComponent<Rigidbody2D>();
+                if (playerBody != null) playerBody.linearVelocity = Vector2.zero;
+            }
         }
 
         if (isBossFight)
@@ -228,6 +260,8 @@ public class RoomManager : MonoBehaviour
         Vector3 offset = new Vector3(Mathf.Min(4f, halfWidth * 0.5f), Mathf.Min(2.5f, halfHeight * 0.4f), 0f);
         Vector3 spawnPos = player != null ? player.transform.position + offset :
             bossSpawnPoint != null ? bossSpawnPoint.position : Vector3.zero;
+        // bosses appear in the middle of the room map
+        if (RoomEnvironment.Instance != null) spawnPos = RoomEnvironment.Instance.Center;
 
         GameObject prefab = ResolveBossPrefabForRoom(currentRoom, bossIndex);
 
@@ -259,11 +293,19 @@ public class RoomManager : MonoBehaviour
         if (newBoss != null)
         {
             float balancedMaxHP = BossData.GetBalancedMaxHPByRoom(currentRoom);
-            float dmgScale = 1f + (currentRoom - 1) * 0.08f;
+            float dmgScale = 1f + (currentRoom - 1) * 0.04f;
             newBoss.Init(player != null ? player.transform : null, 1f, dmgScale, 1f);
             if (newBoss.Health != null)
             {
                 newBoss.Health.SetExactMaxHealth(balancedMaxHP);
+                newBoss.Health.SetExpDrop(BossBase.GetBalancedExpByRoom(currentRoom));
+                // the bar was shown with the default HP in Init; show it again with the balanced HP
+                if (global::UI.BossHealthBarUI.Instance != null)
+                {
+                    string title = newBoss.BossConfig != null && !string.IsNullOrEmpty(newBoss.BossConfig.BossTitle) ? newBoss.BossConfig.BossTitle : boss.name;
+                    global::UI.BossHealthBarUI.Instance.ShowBossBar(title, balancedMaxHP);
+                    global::UI.BossHealthBarUI.Instance.UpdateBossHealth(balancedMaxHP);
+                }
             }
         }
         else
@@ -350,7 +392,7 @@ public class RoomManager : MonoBehaviour
     {
         if (isRoomActive)
         {
-            if (!isBossFight)
+            if (!isBossFight && !IsBossRoom)
             {
                 roomTimer -= Time.deltaTime;
                 UpdateTimerUI(roomTimer);
@@ -384,7 +426,7 @@ public class RoomManager : MonoBehaviour
             if (timerText != null)
             {
                 int remainingSec = Mathf.CeilToInt(Mathf.Max(0f, purgeCountdownTimer));
-                timerText.text = $"PICK A DOOR  |  PURGE IN {remainingSec:00}s";
+                timerText.text = $"PICK A DOOR - PURGE IN {remainingSec:00}s";
             }
 
             if (purgeCountdownTimer <= 0f)
@@ -416,18 +458,17 @@ public class RoomManager : MonoBehaviour
                 }
             }
 
-            purgeExposureTimer -= deltaTime;
-            if (purgeExposureTimer <= 0f)
-            {
-                ForceSelectRandomDoor();
-            }
+            // gas keeps draining until the player enters a door or dies (no auto-teleport)
         }
     }
 
     private PlayerHealth FindPlayerHealth()
     {
         GameObject player = GameObject.FindWithTag("Player");
-        return player != null ? player.GetComponent<PlayerHealth>() : null;
+        PlayerHealth ph = player != null ? player.GetComponentInParent<PlayerHealth>() : null;
+        if (ph == null && player != null) ph = player.GetComponentInChildren<PlayerHealth>();
+        if (ph == null) ph = FindFirstObjectByType<PlayerHealth>();
+        return ph;
     }
 
     private void ForceSelectRandomDoor()
@@ -502,9 +543,15 @@ public class RoomManager : MonoBehaviour
         {
             EnemySpawner.Instance.ClearAllEnemies();
         }
+        if (Enemies.RoomWaveSpawner.Instance != null)
+        {
+            Enemies.RoomWaveSpawner.Instance.StopSpawning();
+            Enemies.RoomWaveSpawner.Instance.ClearAllEnemies();
+        }
+        PurgeLeftoverEnemies();
 
-        // 2. ดูด EXP Crystal ทั้งหมดที่ตกค้างอยู่ในฉากเข้าหาตัวผู้เล่นอัตโนมัติ
-        EXPCrystal.VacuumAllActiveCrystals();
+        // 2. collect every leftover EXP crystal instantly (no EXP is lost when the room ends)
+        EXPCrystal.CollectAllNow();
 
         // 3. มอบรางวัลเครดิตเมื่อเคลียร์ห้อง (ห้องปกติ 10, ห้องบอส 50) และบันทึกสถิติห้องปกติ (+25 RP/ห้อง)
         if (GameOverManager.Instance != null)
@@ -536,6 +583,24 @@ public class RoomManager : MonoBehaviour
         SpawnNextRoomDoors();
     }
 
+    /// <summary>Removes every enemy, boss minion and enemy shot still alive when a room ends.</summary>
+    private void PurgeLeftoverEnemies()
+    {
+        Enemies.Core.EnemyBase[] left = FindObjectsByType<Enemies.Core.EnemyBase>(FindObjectsSortMode.None);
+        for (int i = 0; i < left.Length; i++)
+        {
+            if (left[i] == null || !left[i].gameObject.activeInHierarchy) continue;
+            left[i].Despawn();
+        }
+        EnemyProjectile[] shots = FindObjectsByType<EnemyProjectile>(FindObjectsSortMode.None);
+        for (int i = 0; i < shots.Length; i++)
+        {
+            if (shots[i] != null) Destroy(shots[i].gameObject);
+        }
+    }
+
+    private bool boonOfferedLastRoom;
+
     private void SpawnNextRoomDoors()
     {
         currentOfferedDoorTypes.Clear();
@@ -555,8 +620,11 @@ public class RoomManager : MonoBehaviour
     {
         List<(RoomRewardType type, float weight)> pool = BuildDoorWeightPool();
 
+        // boon doors only appear every other room: if the last room offered one, it is skipped this room
+        if (boonOfferedLastRoom) pool.RemoveAll(item => item.type == RoomRewardType.BioGeneChamber);
+
         // กฎข้อ 1: การันตีต้องมีประตู BioGeneChamber อย่างน้อย 1 ครั้งในห้อง 1-3
-        bool forceBoonDoor = (currentRoom == 3 && !hasBoonAppearedInRooms1To3);
+        bool forceBoonDoor = (currentRoom == 3 && !hasBoonAppearedInRooms1To3 && !boonOfferedLastRoom);
         if (forceBoonDoor)
         {
             doorA = RoomRewardType.BioGeneChamber;
@@ -571,6 +639,8 @@ public class RoomManager : MonoBehaviour
 
         // กฎข้อ 5: สุ่มประตูที่ 2 โดยห้ามซ้ำชนิดกับประตูแรก
         doorB = PickWeightedDoor(pool);
+
+        boonOfferedLastRoom = (doorA == RoomRewardType.BioGeneChamber || doorB == RoomRewardType.BioGeneChamber);
 
         // อัปเดตสถานะการออกของประตูสำหรับห้องถัดไป
         if (doorA == RoomRewardType.BioGeneChamber || doorB == RoomRewardType.BioGeneChamber)
@@ -666,23 +736,44 @@ public class RoomManager : MonoBehaviour
         return pool[pool.Count - 1].type;
     }
 
+    /// <summary>
+    /// Doors always appear in the central zone of the arena grid, on the top or bottom side: far from
+    /// the player but never in the player's own row.
+    /// </summary>
+    private Vector3 ComputeDoorPosition(int pointIndex)
+    {
+        // reward doors stand in front of the doorways painted into the top wall of the room map
+        if (RoomEnvironment.Instance != null) return RoomEnvironment.Instance.GetDoorSlot(pointIndex);
+
+        GameObject player = GameObject.FindWithTag("Player");
+        Vector3 ppos = player != null ? player.transform.position : Vector3.zero;
+
+        Vector3 center = Vector3.zero;
+        float halfH = 8f;
+        GameObject mapRoot = GameObject.Find("MapBoundaries");
+        if (mapRoot != null)
+        {
+            bool have = false; Bounds b = new Bounds();
+            foreach (BoxCollider2D wall in mapRoot.GetComponentsInChildren<BoxCollider2D>())
+            {
+                if (!have) { b = wall.bounds; have = true; } else b.Encapsulate(wall.bounds);
+            }
+            if (have) { center = b.center; halfH = b.extents.y; }
+        }
+
+        // top or bottom band of the central column, whichever is farther from the player's row
+        float offsetY = Mathf.Clamp(halfH * 0.45f, 4f, 9f);
+        float topY = center.y + offsetY, botY = center.y - offsetY;
+        float y = Mathf.Abs(topY - ppos.y) >= Mathf.Abs(botY - ppos.y) ? topY : botY;
+        if (Mathf.Abs(y - ppos.y) < 4f) y = ppos.y >= center.y ? botY : topY;   // never the player's row
+
+        float x = center.x + (pointIndex == 0 ? -9f : 9f);   // far apart so the labels never overlap
+        return new Vector3(x, y, 0f);
+    }
+
     private void SpawnSingleDoor(RoomRewardType type, string title, int pointIndex)
     {
-        Vector3 doorPosition;
-        GameObject player = GameObject.FindWithTag("Player");
-        if (player != null)
-        {
-            doorPosition = player.transform.position +
-                new Vector3(pointIndex == 0 ? -3.5f : 3.5f, 2f, 0f);
-        }
-        else if (doorSpawnPoints != null && pointIndex < doorSpawnPoints.Length && doorSpawnPoints[pointIndex] != null)
-        {
-            doorPosition = doorSpawnPoints[pointIndex].position;
-        }
-        else
-        {
-            doorPosition = new Vector3(pointIndex == 0 ? -3.5f : 3.5f, 2f, 0f);
-        }
+        Vector3 doorPosition = ComputeDoorPosition(pointIndex);
 
         if (roomDoorPrefab != null)
         {
@@ -692,6 +783,8 @@ public class RoomManager : MonoBehaviour
             {
                 door.SetupDoor(type, title);
             }
+            // light up the doorway in the wall to show it is ready to enter
+            if (RoomEnvironment.Instance != null) RoomEnvironment.Instance.OpenDoorway(pointIndex, RoomDoor.GetRewardColor(type));
             activeDoors.Add(doorObj);
         }
         else
@@ -760,8 +853,16 @@ public class RoomManager : MonoBehaviour
                 if (playerHealth != null)
                 {
                     float healAmount = playerHealth.MaxHealth * 0.30f;
+                    float hpBefore = playerHealth.CurrentHealth;
                     playerHealth.Heal(healAmount);
-                    Debug.Log($"[RoomManager] Medical Pod restored +{healAmount:F1} HP (30% Max HP)!");
+                    float gained = playerHealth.CurrentHealth - hpBefore;
+                    SkillMajorEffects.FloatText(gained > 0.5f ? "+" + Mathf.RoundToInt(gained) + " HP" : "HP FULL", (Vector2)playerHealth.transform.position + Vector2.up * 1.5f, new Color(0.4f, 1f, 0.5f, 1f));
+                    PoisonSmoke.Burst(playerHealth.transform.position, 1.6f, 10, 0.9f);
+                    Debug.Log($"[RoomManager] Medical Pod restored {gained:F1} HP (30% Max HP = {healAmount:F1}), now {playerHealth.CurrentHealth:F0}/{playerHealth.MaxHealth:F0}");
+                }
+                else
+                {
+                    Debug.LogWarning("[RoomManager] Medical Pod: no PlayerHealth found, nothing healed!");
                 }
                 ProceedToNextRoom();
                 break;
@@ -788,6 +889,18 @@ public class RoomManager : MonoBehaviour
                 ProceedToNextRoom();
                 break;
         }
+    }
+
+    /// <summary>Debug: jump to another room (used by DebugCheats [ and ] keys to look at the maps).</summary>
+    public void DebugJumpRoom(int delta)
+    {
+        currentRoom = Mathf.Clamp(currentRoom + delta, 1, MaxRooms);
+        isPurgeActive = false;
+        isWaitingForDoor = false;
+        if (EnemySpawner.Instance != null) EnemySpawner.Instance.StopSpawning();
+        PurgeLeftoverEnemies();
+        ClearExistingDoors();
+        StartNewRoom();
     }
 
     public void ProceedToNextRoom()
@@ -826,6 +939,7 @@ public class RoomManager : MonoBehaviour
 
     private void ClearExistingDoors()
     {
+        if (RoomEnvironment.Instance != null) RoomEnvironment.Instance.LockDoorways();
         foreach (GameObject door in activeDoors)
         {
             if (door != null) Destroy(door);

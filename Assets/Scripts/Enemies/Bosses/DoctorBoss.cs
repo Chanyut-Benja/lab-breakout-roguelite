@@ -64,6 +64,7 @@ namespace Enemies.Bosses
             ResolveMinionAssets();
 
             base.Awake();
+            SkinLibrary.Apply(gameObject, "doctor");
         }
 
         private void ResolveMinionAssets()

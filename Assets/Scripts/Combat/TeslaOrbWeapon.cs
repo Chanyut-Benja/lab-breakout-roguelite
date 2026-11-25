@@ -52,6 +52,7 @@ public class TeslaOrbNode : MonoBehaviour
 {
     private SpriteRenderer spriteRenderer;
     private float pulsePhase;
+    private SpriteRenderer glowRenderer;
 
     public SpriteRenderer Renderer => spriteRenderer;
 
@@ -63,28 +64,42 @@ public class TeslaOrbNode : MonoBehaviour
             spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
         }
 
-        ProceduralSprites.EnsureVisible(spriteRenderer, ProceduralSprites.Shot);
-        spriteRenderer.sprite = ProceduralSprites.Shot;
+        spriteRenderer.sprite = WeaponVfx.Circle;   // round orb (original look), no spinning capsule
         spriteRenderer.sortingOrder = 16;
         pulsePhase = Random.Range(0f, Mathf.PI * 2f);
+
+        GameObject glowGo = new GameObject("Glow");
+        glowGo.transform.SetParent(transform, false);
+        glowGo.transform.localScale = Vector3.one * 2.2f;
+        SpriteRenderer gr = glowGo.AddComponent<SpriteRenderer>();
+        glowRenderer = gr;
+        gr.sprite = WeaponVfx.Glow;
+        gr.color = new Color(0.4f, 0.8f, 1f, 0.55f);
+        gr.sortingOrder = 15;
+        WeaponVfx.AddTrail(gameObject, new Color(0.45f, 0.85f, 1f, 0.7f), 0.3f, 0.25f);
     }
 
     public void ConfigureVisual(bool isEvolved, float areaMultiplier)
     {
         if (spriteRenderer == null) return;
 
+        // Storm Citadel: deep blue with a touch of purple; the normal orb stays light blue
         spriteRenderer.color = isEvolved
-            ? new Color(0.55f, 0.95f, 1f, 1f)
-            : new Color(0.25f, 0.85f, 1f, 0.95f);
+            ? new Color(0.2f, 0.28f, 0.95f, 1f)
+            : new Color(0.35f, 0.8f, 1f, 1f);
+        if (glowRenderer != null)
+            glowRenderer.color = isEvolved
+                ? new Color(0.42f, 0.22f, 0.9f, 0.55f)
+                : new Color(0.4f, 0.8f, 1f, 0.55f);
 
-        float baseScale = isEvolved ? 0.95f : 0.75f;
+        float baseScale = isEvolved ? 0.6f : 0.5f;
         transform.localScale = Vector3.one * (baseScale * Mathf.Clamp(areaMultiplier, 1f, 1.8f));
     }
 
     private void Update()
     {
         // เอฟเฟกต์กระพริบพลังงานไฟฟ้าและหมุนรอบตัวเอง
-        transform.Rotate(0f, 0f, 260f * Time.deltaTime);
+        // (orb stays round; no rotation needed)
 
         if (spriteRenderer != null)
         {
@@ -119,7 +134,7 @@ public class TeslaOrbWeapon : MonoBehaviour
     /// </summary>
     public static float GetDamage(int level, bool evolved = false, TeslaOrbData data = null)
     {
-        if (evolved) return 60f;
+        if (evolved) return 30f;   // Storm Citadel pulses twice as often (see GetBaseCooldown), same damage per second as before
         if (data != null) return data.GetDamage(level);
 
         float t = Mathf.Clamp01((Mathf.Clamp(level, 1, 5) - 1) / 4f);
@@ -134,7 +149,7 @@ public class TeslaOrbWeapon : MonoBehaviour
         float baseRadius;
         if (evolved)
         {
-            baseRadius = 4.0f;
+            baseRadius = 6.0f;   // evolved: orbs orbit much further out
         }
         else if (data != null)
         {
@@ -155,7 +170,7 @@ public class TeslaOrbWeapon : MonoBehaviour
     /// </summary>
     public static int GetOrbCount(int level, bool evolved = false, TeslaOrbData data = null)
     {
-        if (evolved) return 4;
+        if (evolved) return 6;   // evolved: 6 orbs
         if (data != null) return data.GetOrbCount(level);
 
         int clamped = Mathf.Clamp(level, 1, 5);
@@ -169,6 +184,7 @@ public class TeslaOrbWeapon : MonoBehaviour
     /// </summary>
     public static float GetBaseCooldown(int level = 1, bool evolved = false, TeslaOrbData data = null)
     {
+        if (evolved) return 0.30f;   // Holy-Bible style: constant hits, constant push
         if (data != null) return data.shockInterval;
         return 0.60f;
     }
@@ -219,13 +235,9 @@ public class TeslaOrbWeapon : MonoBehaviour
             }
         }
 
-        if (!isActiveWeapon || isEvolved)
+        if (!isActiveWeapon)
         {
             SetOrbsActive(false);
-            if (isEvolved)
-            {
-                StormCitadelController.EnsureActiveOnPlayer(transform);
-            }
             return;
         }
 
@@ -288,6 +300,7 @@ public class TeslaOrbWeapon : MonoBehaviour
         if (count <= 0) return;
 
         float angularSpeed = weaponData != null ? weaponData.orbitAngularSpeedDeg : 180f;
+        if (isEvolved) angularSpeed *= 3f;   // evolved: orbs spin very fast (540 deg/s)
         currentOrbitAngleDeg = (currentOrbitAngleDeg + angularSpeed * Time.deltaTime) % 360f;
 
         float radius = GetOrbitRadius(currentLevel, isEvolved, weaponData);
@@ -374,7 +387,10 @@ public class TeslaOrbWeapon : MonoBehaviour
             if (targetObj == null || !targetObj.activeInHierarchy || targetObj.CompareTag("Player") || shockedTargets.Contains(targetObj))
                 continue;
 
+            int before = shockedTargets.Count;
             TryApplyShockDamage(targetObj, col, baseDamage, shockedTargets);
+            if (shockedTargets.Count > before)
+                WeaponVfx.Lightning(center, col.bounds.center, new Color(0.45f, 0.8f, 1f, 0.9f), 0.1f, 0.1f, 0);
         }
     }
 
@@ -387,6 +403,13 @@ public class TeslaOrbWeapon : MonoBehaviour
             return;
 
         shockedTargets.Add(targetObj);
+
+        // evolved orbs shove enemies away from the player
+        if (isEvolved)
+        {
+            Vector2 away = (Vector2)targetObj.transform.position - (Vector2)transform.position;
+            NanoBladeSlash.ApplyKnockbackDisplacement(targetObj, away, 1.1f);
+        }
 
         bool isCrit = false;
         float finalDamage = baseDamage;

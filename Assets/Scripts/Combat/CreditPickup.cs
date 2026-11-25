@@ -43,7 +43,7 @@ namespace Combat
             if (sr != null && sr.sprite == null)
             {
                 sr.sprite = GetCreditSprite();
-                sr.color = new Color(1f, 0.85f, 0.2f, 1f); // Neon Gold
+                sr.color = CreditTint(); // Neon Gold
                 sr.sortingOrder = -5;
             }
             FindPlayer();
@@ -87,7 +87,7 @@ namespace Combat
             obj.transform.position = position;
             SpriteRenderer sr = obj.AddComponent<SpriteRenderer>();
             sr.sprite = GetCreditSprite();
-            sr.color = new Color(1f, 0.85f, 0.2f, 1f);
+            sr.color = CreditTint();
             sr.sortingOrder = -5;
 
             CircleCollider2D col = obj.AddComponent<CircleCollider2D>();
@@ -99,9 +99,14 @@ namespace Combat
             return obj;
         }
 
+        private static bool usingArt;
+        private static Color CreditTint() { GetCreditSprite(); return usingArt ? Color.white : new Color(1f, 0.85f, 0.2f, 1f); }
+
         public static Sprite GetCreditSprite()
         {
             if (creditSprite != null) return creditSprite;
+            Sprite art = SkinLibrary.CreditSprite();
+            if (art != null) { creditSprite = art; usingArt = true; return creditSprite; }
             const int size = 32;
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Point;

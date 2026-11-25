@@ -97,7 +97,7 @@ namespace Enemies.Bosses.States
 
         private void DeployTurrets()
         {
-            int turretCount = architect.CurrentPhase >= 2 ? 3 : 2;
+            int turretCount = architect.CurrentPhase >= 2 ? 4 : 3;
             architect.DeployTurrets(turretCount);
 
             if (architect.Animator != null) architect.Animator.SetTrigger("Attack");

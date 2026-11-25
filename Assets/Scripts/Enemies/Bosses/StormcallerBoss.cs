@@ -41,6 +41,7 @@ namespace Enemies.Bosses
             }
 
             base.Awake();
+            SkinLibrary.Apply(gameObject, "stormcaller");   // hand-drawn sprite
         }
 
         protected override void InitializeStates()
